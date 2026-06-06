@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Shield Sandbox Firewall",
+  "version": "2.3.0",
+  "description": "Real-time security: deep payload inspection and local request firewall.",
+  "permissions": [
+    "webRequest",
+    "tabs",
+    "storage",
+    "activeTab",
+    "notifications",
+    "downloads",
+    "debugger",
+    "declarativeNetRequest",
+    "declarativeNetRequestFeedback"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Security Dashboard"
+  },
+  "icons": {
+    "16": "images/icon-16.png",
+    "48": "images/icon-48.png",
+    "128": "images/icon-128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["injector.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}
