@@ -1,5 +1,5 @@
 /**
- * Security Extension - Background Service Worker v2.3.3
+ * Security Extension - Background Service Worker v2.4.0
  * 
  * Persistent & Robust for Manifest V3:
  *  - Persists state in chrome.storage.session to survive Service Worker idle terminations.
@@ -963,7 +963,7 @@ if (chrome.downloads) {
   }
 }
 
-console.log('[Security Extension] Background worker v2.3.3 initialized');
+console.log('[Security Extension] Background worker v2.4.0 initialized');
 
 // ─── Declarative Net Request Dynamic Rules ───────────────────────────────────
 function setupDeclarativeRules() {

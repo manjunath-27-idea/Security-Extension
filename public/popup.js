@@ -1,8 +1,30 @@
 /**
- * Security Extension - Redesigned Popup Script v2.3.3
+ * Security Extension - Redesigned Popup Script v2.4.0
  */
 
 let currentTabId = null;
+
+// Theme Toggle Logic
+const themeToggleBtn = document.getElementById('themeToggleBtn');
+const applyTheme = (theme) => {
+  document.documentElement.setAttribute('data-theme', theme);
+  if (themeToggleBtn) {
+    themeToggleBtn.textContent = theme === 'light' ? '🌙' : '☀️';
+  }
+};
+
+chrome.storage.local.get(['theme'], (result) => {
+  applyTheme(result.theme || 'dark');
+});
+
+if (themeToggleBtn) {
+  themeToggleBtn.addEventListener('click', () => {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    chrome.storage.local.set({ theme: newTheme });
+    applyTheme(newTheme);
+  });
+}
 
 // Initialize popup markup
 document.getElementById('content').innerHTML = `

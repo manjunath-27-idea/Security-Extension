@@ -22,6 +22,52 @@
       --font-mono: 'JetBrains Mono', monospace;
     }
 
+    [data-theme="light"] {
+      --bg: #f3f4f6;
+      --surface: #ffffff;
+      --border: rgba(0, 0, 0, 0.08);
+      --text: #111827;
+      --muted: #6b7280;
+      --indigo: #4f46e5;
+      --indigo-glow: rgba(79, 70, 229, 0.1);
+      --red: #dc2626;
+      --green: #059669;
+      --yellow: #d97706;
+      --orange: #ea580c;
+    }
+
+    [data-theme="light"] .header {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(243, 244, 246, 0) 100%) !important;
+    }
+
+    [data-theme="light"] .brand-text h1 {
+      background: linear-gradient(135deg, #111827 0%, #4b5563 100%) !important;
+      -webkit-background-clip: text !important;
+      -webkit-text-fill-color: transparent !important;
+    }
+
+    [data-theme="light"] .circle-bg {
+      stroke: rgba(0, 0, 0, 0.04) !important;
+    }
+
+    [data-theme="light"] .site-badge {
+      background: rgba(79, 70, 229, 0.08) !important;
+      color: #4f46e5 !important;
+    }
+
+    [data-theme="light"] .slider {
+      background-color: rgba(0, 0, 0, 0.08) !important;
+      border: 1px solid rgba(0, 0, 0, 0.04) !important;
+    }
+
+    [data-theme="light"] .slider::before {
+      background-color: #718096 !important;
+    }
+
+    [data-theme="light"] input:checked + .slider::before {
+      background-color: #ffffff !important;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
@@ -406,6 +452,7 @@
         <p><span class="pulse-dot"></span> Deep inspection active</p>
       </div>
     </div>
+    <button id="themeToggleBtn" style="background: none; border: none; font-size: 14px; cursor: pointer; padding: 4px; display: flex; align-items: center; color: var(--text); outline: none;">☀️</button>
   </div>
 
   <div id="content">

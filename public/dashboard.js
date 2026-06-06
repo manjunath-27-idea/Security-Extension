@@ -1,5 +1,5 @@
 /**
- * Security Extension - Redesigned Dashboard Script v2.3.3
+ * Security Extension - Redesigned Dashboard Script v2.4.0
  */
 
 let currentTabId = null;
@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupStatBoxClicks();
   setupModalClose();
   setupLocalBlocklistInput();
+  setupTheme();
   document.getElementById('btnClear').addEventListener('click', clearData);
   document.getElementById('btnRefresh').addEventListener('click', loadDashboard);
   refreshInterval = setInterval(loadDashboard, 4000);
@@ -652,4 +653,27 @@ function renderLocalBlocklist(domains) {
       });
     });
   });
+}
+
+function setupTheme() {
+  const themeToggleBtn = document.getElementById('themeToggleBtn');
+  const applyTheme = (theme) => {
+    document.documentElement.setAttribute('data-theme', theme);
+    if (themeToggleBtn) {
+      themeToggleBtn.textContent = theme === 'light' ? '🌙' : '☀️';
+    }
+  };
+
+  chrome.storage.local.get(['theme'], (result) => {
+    applyTheme(result.theme || 'dark');
+  });
+
+  if (themeToggleBtn) {
+    themeToggleBtn.addEventListener('click', () => {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+      const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+      chrome.storage.local.set({ theme: newTheme });
+      applyTheme(newTheme);
+    });
+  }
 }

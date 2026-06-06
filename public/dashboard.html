@@ -28,6 +28,70 @@
       --sans: 'Plus Jakarta Sans', system-ui, sans-serif;
     }
 
+    [data-theme="light"] {
+      --bg: #f3f4f6;
+      --surface: #ffffff;
+      --surface2: #f9fafb;
+      --border: rgba(0, 0, 0, 0.08);
+      --border-accent: rgba(79, 70, 229, 0.3);
+      --text: #111827;
+      --muted: #6b7280;
+      --dim: #e5e7eb;
+      --blue: #2563eb;
+      --indigo: #4f46e5;
+      --indigo-glow: rgba(79, 70, 229, 0.1);
+      --green: #059669;
+      --yellow: #d97706;
+      --orange: #ea580c;
+      --red: #dc2626;
+    }
+
+    [data-theme="light"] .topbar {
+      background: rgba(243, 244, 246, 0.85) !important;
+    }
+
+    [data-theme="light"] .tab-btn:hover {
+      background: rgba(0, 0, 0, 0.03) !important;
+    }
+
+    [data-theme="light"] .tab-btn.active {
+      background: rgba(79, 70, 229, 0.08) !important;
+      border-color: rgba(79, 70, 229, 0.15) !important;
+      color: #4f46e5 !important;
+    }
+    
+    [data-theme="light"] .btn-ghost {
+      background: rgba(0, 0, 0, 0.02) !important;
+      color: #4b5563 !important;
+    }
+
+    [data-theme="light"] .btn-ghost:hover {
+      background: rgba(0, 0, 0, 0.05) !important;
+      color: #111827 !important;
+    }
+
+    [data-theme="light"] .logo-text {
+      color: #111827 !important;
+    }
+
+    [data-theme="light"] .site-badge {
+      background: rgba(79, 70, 229, 0.08) !important;
+      color: #4f46e5 !important;
+    }
+
+    [data-theme="light"] .slider {
+      background-color: rgba(0, 0, 0, 0.08) !important;
+      border: 1px solid rgba(0, 0, 0, 0.04) !important;
+    }
+
+    [data-theme="light"] .slider::before {
+      background-color: #718096 !important;
+    }
+
+    [data-theme="light"] input:checked + .slider::before {
+      background-color: #ffffff !important;
+    }
+
     html { scroll-behavior: smooth; }
 
     body {
@@ -719,7 +783,7 @@
     </div>
     <div>
       <div class="logo-text">Shield Dashboard</div>
-      <span class="logo-sub">v2.3.3 · Control Center</span>
+      <span class="logo-sub">v2.4.0 · Control Center</span>
     </div>
   </a>
   <div class="topbar-mid"></div>
@@ -748,6 +812,7 @@
       </label>
     </div>
 
+    <button class="btn btn-ghost" id="themeToggleBtn" title="Toggle Light/Dark Theme" style="padding: 8px 10px; font-size: 14px;">☀️</button>
     <button class="btn btn-ghost" id="btnRefresh">Refresh</button>
     <button class="btn btn-ghost" id="btnClear">Clear</button>
     <div class="last-update">Updated <span id="lastUpdate">--:--:--</span></div>
