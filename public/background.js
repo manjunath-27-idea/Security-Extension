@@ -587,6 +587,12 @@ chrome.webRequest.onBeforeRequest.addListener(
     const tracker = checkTracker(domain);
     const threat = !isSecure ? 'critical' : tracker ? 'warning' : 'none';
 
+    if (tracker) {
+      chrome.tabs.sendMessage(details.tabId, { action: 'incrementThreatCount', type: `Tracker (${tracker.name})` }).catch(() => {});
+    } else if (!isSecure) {
+      chrome.tabs.sendMessage(details.tabId, { action: 'incrementThreatCount', type: `Insecure HTTP (${domain})` }).catch(() => {});
+    }
+
     if (!securityData.requests[details.tabId]) {
       securityData.requests[details.tabId] = [];
     }
@@ -957,6 +963,9 @@ if (chrome.declarativeNetRequest?.onRuleMatchedDebug) {
 
     const domain = getDomain(info.request.url) || 'Blocked Threat';
     
+    // Notify the active tab content script
+    chrome.tabs.sendMessage(tabId, { action: 'incrementThreatCount', type: `Native DNR Block (${domain})` }).catch(() => {});
+
     if (!securityData.trackers[tabId]) {
       securityData.trackers[tabId] = {};
     }
