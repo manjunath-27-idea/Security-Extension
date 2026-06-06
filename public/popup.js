@@ -1,5 +1,5 @@
 /**
- * Security Extension - Redesigned Popup Script v2.4.0
+ * Security Extension - Redesigned Popup Script v2.4.1
  */
 
 let currentTabId = null;
@@ -101,6 +101,15 @@ chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
   }
 
   loadData();
+});
+
+// Listen for real-time updates from background worker
+chrome.runtime.onMessage.addListener((request) => {
+  if (request.action === 'securityDataUpdated') {
+    if (request.tabId === currentTabId) {
+      loadData();
+    }
+  }
 });
 
 function loadData() {

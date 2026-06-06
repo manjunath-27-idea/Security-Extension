@@ -1,5 +1,5 @@
 /**
- * Security Extension - Background Service Worker v2.4.0
+ * Security Extension - Background Service Worker v2.4.1
  * 
  * Persistent & Robust for Manifest V3:
  *  - Persists state in chrome.storage.session to survive Service Worker idle terminations.
@@ -31,11 +31,62 @@ const securityData = {
   activeTab: null,
 };
 
-// Helper to save state
-function saveState() {
-  if (chrome.storage?.session) {
-    chrome.storage.session.set({ securityData }).catch(() => {});
+// Helper to calculate total threats for a tab
+function getTabThreatCount(tabId) {
+  if (!tabId || tabId === -1) return 0;
+
+  // Trackers count: total requests for all trackers detected
+  let trackerRequests = 0;
+  const trackers = securityData.trackers[tabId] || {};
+  for (const t of Object.values(trackers)) {
+    trackerRequests += (t.requests || 0);
   }
+
+  // Payload alerts count
+  const payloadAlerts = (securityData.payloadAlerts[tabId] || []).length;
+
+  // Script scans count
+  const scriptScans = (securityData.scriptScans[tabId] || []).length;
+
+  // Behavioral alerts count
+  const behavioralAlerts = (securityData.behavioralAlerts[tabId] || []).length;
+
+  // Insecure HTTP requests count (excluding trackers to avoid double counting)
+  const requests = securityData.requests[tabId] || [];
+  const insecureRequests = requests.filter(r => !r.secure && r.status !== 'BLOCKED' && !checkTracker(r.domain)).length;
+
+  return trackerRequests + payloadAlerts + scriptScans + behavioralAlerts + insecureRequests;
+}
+
+// Helper to save state and notify popup/dashboard and content scripts
+function saveStateAndNotify(tabId, threatType = null) {
+  if (chrome.storage?.session) {
+    chrome.storage.session.set({ securityData }).then(() => {
+      if (tabId && tabId !== -1) {
+        chrome.runtime.sendMessage({ action: 'securityDataUpdated', tabId })
+          .catch(() => {})
+          .finally(() => {
+            if (threatType) {
+              const count = getTabThreatCount(tabId);
+              chrome.tabs.sendMessage(tabId, { action: 'showThreatToast', count, type: threatType }).catch(() => {});
+            }
+          });
+      }
+    }).catch(() => {});
+  } else {
+    if (tabId && tabId !== -1) {
+      chrome.runtime.sendMessage({ action: 'securityDataUpdated', tabId }).catch(() => {});
+      if (threatType) {
+        const count = getTabThreatCount(tabId);
+        chrome.tabs.sendMessage(tabId, { action: 'showThreatToast', count, type: threatType }).catch(() => {});
+      }
+    }
+  }
+}
+
+// Helper to save state (simple fallback wrapper)
+function saveState() {
+  saveStateAndNotify(null);
 }
 
 // Load state at startup
@@ -528,6 +579,37 @@ function checkTracker(domain) {
   return null;
 }
 
+// Helper to record a detected tracker domain
+function recordTracker(tabId, domain, tracker) {
+  if (!tabId || tabId === -1) return;
+  if (!securityData.trackers[tabId]) {
+    securityData.trackers[tabId] = {};
+  }
+  const trackers = securityData.trackers[tabId];
+  if (!trackers[domain]) {
+    trackers[domain] = {
+      id: `tracker-${domain}`,
+      name: tracker.name,
+      domain,
+      category: tracker.category,
+      requests: 0,
+      riskLevel: tracker.risk,
+      dataCollected: getTrackerData(tracker.name),
+    };
+  }
+  trackers[domain].requests++;
+
+  // Automatically auto-block this tracker for future visits by saving it locally
+  if (!securityData.localBlockedDomains) {
+    securityData.localBlockedDomains = [];
+  }
+  if (!securityData.localBlockedDomains.includes(domain)) {
+    securityData.localBlockedDomains.push(domain);
+    setupDeclarativeRules();
+    console.log('[Shield active block] Automatically registered tracker to local blocklist:', domain);
+  }
+}
+
 chrome.webRequest.onHeadersReceived.addListener(
   async (details) => {
     await stateLoaded;
@@ -554,38 +636,7 @@ chrome.webRequest.onHeadersReceived.addListener(
     const existing = securityData.headers[details.tabId];
     securityData.headers[details.tabId] = { ...existing, [domain]: headerStatus };
 
-    // Tracker check
-    const tracker = checkTracker(domain);
-    if (tracker) {
-      if (!securityData.trackers[details.tabId]) {
-        securityData.trackers[details.tabId] = {};
-      }
-      const trackers = securityData.trackers[details.tabId];
-      if (!trackers[domain]) {
-        trackers[domain] = {
-          id: `tracker-${domain}`,
-          name: tracker.name,
-          domain,
-          category: tracker.category,
-          requests: 0,
-          riskLevel: tracker.risk,
-          dataCollected: getTrackerData(tracker.name),
-        };
-      }
-      trackers[domain].requests++;
-
-      // Automatically auto-block this tracker for future visits by saving it locally
-      if (!securityData.localBlockedDomains) {
-        securityData.localBlockedDomains = [];
-      }
-      if (!securityData.localBlockedDomains.includes(domain)) {
-        securityData.localBlockedDomains.push(domain);
-        saveState();
-        setupDeclarativeRules();
-        console.log('[Shield active block] Automatically registered tracker to local blocklist:', domain);
-      }
-    }
-    saveState();
+    saveStateAndNotify(details.tabId);
   },
   { urls: ['<all_urls>'] },
   ['responseHeaders']
@@ -598,14 +649,28 @@ chrome.webRequest.onBeforeRequest.addListener(
     const domain = getDomain(details.url);
     if (!domain) return;
 
+    const defaultBlockDomains = [
+      'malicious-tracker-test.com',
+      'bad-adserver.net',
+      'coinhive.com',
+      'miner.c3pool.com',
+      'urlhaus-test.malware-cnc.biz'
+    ];
+    const isBlockedDomain = defaultBlockDomains.includes(domain) || 
+                            (securityData.localBlockedDomains && securityData.localBlockedDomains.includes(domain));
+
     const isSecure = details.url.startsWith('https');
     const tracker = checkTracker(domain);
     const threat = !isSecure ? 'critical' : tracker ? 'warning' : 'none';
 
-    if (tracker) {
-      chrome.tabs.sendMessage(details.tabId, { action: 'incrementThreatCount', type: `Tracker (${tracker.name})` }).catch(() => {});
-    } else if (!isSecure) {
-      chrome.tabs.sendMessage(details.tabId, { action: 'incrementThreatCount', type: `Insecure HTTP (${domain})` }).catch(() => {});
+    let threatType = null;
+    if (!isBlockedDomain) {
+      if (tracker) {
+        recordTracker(details.tabId, domain, tracker);
+        threatType = `Tracker (${tracker.name})`;
+      } else if (!isSecure) {
+        threatType = `Insecure HTTP (${domain})`;
+      }
     }
 
     if (!securityData.requests[details.tabId]) {
@@ -622,10 +687,11 @@ chrome.webRequest.onBeforeRequest.addListener(
       threat,
       timestamp: new Date().toISOString(),
       size: 0,
-      status: 0,
+      status: isBlockedDomain ? 'BLOCKED' : 0,
     });
     if (reqs.length > 100) reqs.shift();
-    saveState();
+
+    saveStateAndNotify(details.tabId, threatType);
   },
   { urls: ['<all_urls>'] }
 );
@@ -656,7 +722,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           priority: 2,
         });
       }
-      saveState();
+      const type = request.data.blocked ? 'Payload Leak Sanitized' : 'Payload Leak Detected';
+      saveStateAndNotify(tabId, type);
       sendResponse({ success: true });
       return;
     }
@@ -664,7 +731,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'pageAnalysis') {
       if (!tabId) return;
       securityData.pageData[tabId] = request.data;
-      saveState();
+      saveStateAndNotify(tabId);
       sendResponse({ success: true });
       return;
     }
@@ -766,7 +833,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     if (request.action === 'setSettings') {
       securityData.settings = { ...securityData.settings, ...request.settings };
-      saveState();
+      saveStateAndNotify(tabId);
 
       if (securityData.settings.debuggerEnabled) {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -794,7 +861,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const alerts = securityData.behavioralAlerts[tabId];
       alerts.push(request.data);
       if (alerts.length > 100) alerts.shift();
-      saveState();
+      const type = request.data.type || 'Behavioral Threat Poisoned';
+      saveStateAndNotify(tabId, type);
       sendResponse({ success: true });
       return;
     }
@@ -807,7 +875,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       delete securityData.pageData[tabId];
       delete securityData.scriptScans[tabId];
       delete securityData.behavioralAlerts[tabId];
-      saveState();
+      saveStateAndNotify(tabId);
       sendResponse({ success: true });
       return;
     }
@@ -825,7 +893,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const domain = request.domain.trim().toLowerCase();
       if (domain && !securityData.localBlockedDomains.includes(domain)) {
         securityData.localBlockedDomains.push(domain);
-        saveState();
+        saveStateAndNotify(tabId);
         setupDeclarativeRules();
       }
       sendResponse({ success: true, localBlockedDomains: securityData.localBlockedDomains });
@@ -835,7 +903,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'removeLocalBlockDomain') {
       const domain = request.domain.trim().toLowerCase();
       securityData.localBlockedDomains = securityData.localBlockedDomains.filter(d => d !== domain);
-      saveState();
+      saveStateAndNotify(tabId);
       setupDeclarativeRules();
       sendResponse({ success: true, localBlockedDomains: securityData.localBlockedDomains });
       return;
@@ -856,7 +924,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   delete securityData.scriptScans[tabId];
   delete securityData.behavioralAlerts[tabId];
   detachDebugger(tabId);
-  saveState();
+  saveStateAndNotify(null);
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -912,31 +980,25 @@ if (chrome.downloads) {
           console.warn('[Shield Firewall] Suspicious download PAUSED:', filename);
           const cleanName = filename.replace(/^.*[\\\/]/, '');
 
-          // Find the active tab to display the page-level toast notification
+          // Find the active tab to display the page-level toast notification and save state
           chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs[0]?.id) {
-              chrome.tabs.sendMessage(tabs[0].id, {
-                action: 'incrementThreatCount',
-                type: `Suspicious Download Paused (${cleanName || 'unknown'})`
-              }).catch(() => {});
-            }
-          });
-
-          chrome.notifications?.create({
-            type: 'basic',
-            iconUrl: 'images/icon-48.png',
-            title: '⚠️ Suspicious Download Paused',
-            message: `The file "${cleanName || 'unknown'}" is suspicious and was paused by Shield Firewall.`,
-            buttons: [
-              { title: 'Resume' },
-              { title: 'Discard/Cancel' }
-            ]
-          }, (notificationId) => {
-            if (!securityData.pausedDownloads) {
-              securityData.pausedDownloads = {};
-            }
-            securityData.pausedDownloads[notificationId] = downloadItem.id;
-            saveState();
+            const activeTabId = tabs[0]?.id || null;
+            chrome.notifications?.create({
+              type: 'basic',
+              iconUrl: 'images/icon-48.png',
+              title: '⚠️ Suspicious Download Paused',
+              message: `The file "${cleanName || 'unknown'}" is suspicious and was paused by Shield Firewall.`,
+              buttons: [
+                { title: 'Resume' },
+                { title: 'Discard/Cancel' }
+              ]
+            }, (notificationId) => {
+              if (!securityData.pausedDownloads) {
+                securityData.pausedDownloads = {};
+              }
+              securityData.pausedDownloads[notificationId] = downloadItem.id;
+              saveStateAndNotify(activeTabId, `Suspicious Download Paused (${cleanName || 'unknown'})`);
+            });
           });
         });
       }
@@ -957,13 +1019,13 @@ if (chrome.downloads) {
           });
         }
         delete securityData.pausedDownloads[notificationId];
-        saveState();
+        saveStateAndNotify(null);
       }
     });
   }
 }
 
-console.log('[Security Extension] Background worker v2.4.0 initialized');
+console.log('[Security Extension] Background worker v2.4.1 initialized');
 
 // ─── Declarative Net Request Dynamic Rules ───────────────────────────────────
 function setupDeclarativeRules() {
@@ -977,9 +1039,13 @@ function setupDeclarativeRules() {
     'urlhaus-test.malware-cnc.biz'
   ];
 
+  // Combine default and user local blocked domains
+  const localDomains = securityData.localBlockedDomains || [];
+  const allBlockDomains = [...new Set([...defaultBlockDomains, ...localDomains])];
+
   chrome.declarativeNetRequest.getDynamicRules((existingRules) => {
     const removeRuleIds = existingRules.map(r => r.id);
-    const addRules = defaultBlockDomains.map((domain, index) => ({
+    const addRules = allBlockDomains.map((domain, index) => ({
       id: index + 1000,
       priority: 1,
       action: { type: 'block' },
@@ -996,7 +1062,7 @@ function setupDeclarativeRules() {
       if (chrome.runtime.lastError) {
         console.error('[Shield DNR] Error setting rules:', chrome.runtime.lastError);
       } else {
-        console.log('[Shield DNR] Dynamic threat rules active:', defaultBlockDomains.length);
+        console.log('[Shield DNR] Dynamic threat rules active:', allBlockDomains.length);
       }
     });
   });
@@ -1019,9 +1085,6 @@ if (chrome.declarativeNetRequest?.onRuleMatchedDebug) {
     };
     const threatLabel = DNR_THREAT_LABELS[domain] || 'Malicious Threat';
     const typeMsg = `${threatLabel} (${domain})`;
-
-    // Notify the active tab content script
-    chrome.tabs.sendMessage(tabId, { action: 'incrementThreatCount', type: typeMsg }).catch(() => {});
 
     if (!securityData.trackers[tabId]) {
       securityData.trackers[tabId] = {};
@@ -1057,7 +1120,7 @@ if (chrome.declarativeNetRequest?.onRuleMatchedDebug) {
       status: 'BLOCKED',
     });
     if (reqs.length > 100) reqs.shift();
-    saveState();
+    saveStateAndNotify(tabId, typeMsg);
   });
 }
 
@@ -1179,11 +1242,10 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
             timestamp: Date.now(),
           });
           if (scans.length > 50) scans.shift();
-          saveState();
-
-          // Notify the active tab content script
+          
+          // Notify active tab via saveStateAndNotify
           const cleanScriptUrl = url.split('/').pop() || 'external script';
-          chrome.tabs.sendMessage(tabId, { action: 'incrementThreatCount', type: `Suspicious Script (${cleanScriptUrl})` }).catch(() => {});
+          saveStateAndNotify(tabId, `Suspicious Script (${cleanScriptUrl})`);
 
           const hasCritical = findings.some(f => f.severity === 'critical');
           if (hasCritical) {

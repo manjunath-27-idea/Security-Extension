@@ -12,8 +12,6 @@ window.addEventListener('__secext_payload_alert', (event) => {
     action: 'payloadAlert',
     data: detail,
   }).catch(() => {});
-
-  incrementAndShow(detail.blocked ? 'Payload Leak Sanitized' : 'Payload Leak Detected');
 });
 
 window.addEventListener('__secext_behavioral_alert', (event) => {
@@ -22,8 +20,6 @@ window.addEventListener('__secext_behavioral_alert', (event) => {
     action: 'behavioralAlert',
     data: detail,
   }).catch(() => {});
-
-  incrementAndShow(detail.type || 'Behavioral Threat Poisoned');
 });
 
 // ─── Settings / Firewall Mode Sync ───────────────────────────────────────────
@@ -71,8 +67,8 @@ chrome.runtime.onMessage.addListener((request) => {
       detail: { enabled: request.enabled }
     }));
   }
-  if (request.action === 'incrementThreatCount') {
-    incrementAndShow(request.type);
+  if (request.action === 'showThreatToast') {
+    showSecurityToast(request.count, request.type);
   }
 });
 
@@ -154,7 +150,6 @@ observer.observe(document.documentElement, { childList: true, subtree: true });
 console.log('[Security Extension] Content script active');
 
 // ─── Active Security Toast Notification ──────────────────────────────────────
-let pageThreatCount = 0;
 let toastTimeout = null;
 let toastEl = null;
 
@@ -331,9 +326,4 @@ function showSecurityToast(count, lastThreatType) {
   toastTimeout = setTimeout(() => {
     toastEl.classList.remove('show');
   }, 5000);
-}
-
-function incrementAndShow(type) {
-  pageThreatCount++;
-  showSecurityToast(pageThreatCount, type);
 }

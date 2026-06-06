@@ -1,5 +1,5 @@
 /**
- * Security Extension - Redesigned Dashboard Script v2.4.0
+ * Security Extension - Redesigned Dashboard Script v2.4.1
  */
 
 let currentTabId = null;
@@ -29,9 +29,19 @@ document.addEventListener('DOMContentLoaded', () => {
   setupModalClose();
   setupLocalBlocklistInput();
   setupTheme();
+
+  // Listen for real-time updates from background worker
+  chrome.runtime.onMessage.addListener((request) => {
+    if (request.action === 'securityDataUpdated') {
+      if (request.tabId === currentTabId) {
+        loadDashboard();
+      }
+    }
+  });
+
   document.getElementById('btnClear').addEventListener('click', clearData);
   document.getElementById('btnRefresh').addEventListener('click', loadDashboard);
-  refreshInterval = setInterval(loadDashboard, 4000);
+  refreshInterval = setInterval(loadDashboard, 10000); // Polling fallback slowed to 10s
 });
 
 function setupTabs() {
