@@ -13,6 +13,53 @@ A professional, high-performance Chrome security extension designed to perform d
 
 ---
 
+## 🏛️ Extension Architecture & Data Flow
+
+Shield Sandbox Firewall operates across four execution environments to balance deep threat mitigation, low-overhead native network filtering, and sandboxed UI rendering under Manifest V3:
+
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│                      PAGE MAIN WORLD (webpage)                   │
+│  [injector.js]                                                   │
+│    ├── Patches prototypes (Canvas, AudioContext, WebAssembly)    │
+│    └── Dispatches CustomEvents on detection / exfiltration       │
+└────────────────────────────────.─────────────────────────────────┘
+                                 │ CustomEvents
+                                 ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                     ISOLATED WORLD (extension)                   │
+│  [content.js]                                                    │
+│    ├── Listens for CustomEvents and relays via runtime messages  │
+│    └── Injects and renders visual glassmorphic threat toasts     │
+└────────────────────────────────.─────────────────────────────────┘
+                                 │ chrome.runtime.sendMessage
+                                 ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                   EXTENSION BACKGROUND WORKER                    │
+│  [background.js]                                                 │
+│    ├── Survives sw idle cycles via chrome.storage.session        │
+│    ├── Compiles local blocks into native declarativeNetRequest    │
+│    ├── Connects Chrome Debugger API to audit parsed script sources│
+│    └── Aggregates authority scoring & threat counters            │
+└───────────────────────.──────────────────.───────────────────────┘
+                        │                  │
+  securityDataUpdated   │                  │ securityDataUpdated
+                        ▼                  ▼
+┌───────────────────────────┐      ┌───────────────────────────┐
+│       POPUP UI CARD       │      │   CONTROL CENTER DASHBOARD│
+│  [popup.js/html]          │      │  [dashboard.js/html]      │
+│    └── Real-time status   │      │    └── Settings & logs    │
+└───────────────────────────┘      └───────────────────────────┘
+```
+
+### Module Breakdown:
+1. **Main-World Injector (`injector.js`)**: Injected directly into the website's execution thread before the page loads (`document_start`). This permits monkey-patching native JS functions to poison device fingerprinting contexts and track user gestures.
+2. **Sync Bridge Content Script (`content.js`)**: Runs in a secure isolated world, acting as a translator between the webpage and the background worker. Relays main-world alerts to the service worker and dynamically injects isolated CSS-scoped threat notifications in the webpage.
+3. **Persistent Orchestrator (`background.js`)**: The main service worker. Intercepts web requests, compiles dynamic DNR C++ blocking rules, runs script source vulnerability checks via Chrome's Debugger API, and maintains security scores.
+4. **Synchronized UIs (`dashboard.js` & `popup.js`)**: Pull data dynamically from the background store and auto-reload their elements on message update prompts (`securityDataUpdated`) to keep counts matching and responsive.
+
+---
+
 ## 📅 Version History & Release Logs
 
 ### v2.4.2 (Current) — Premium Styling & Source Context Tracking
