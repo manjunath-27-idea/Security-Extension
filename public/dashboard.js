@@ -1,5 +1,5 @@
 /**
- * Security Extension - Redesigned Dashboard Script v2.3.2
+ * Security Extension - Redesigned Dashboard Script v2.3.3
  */
 
 let currentTabId = null;
@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupSettingsToggles();
   setupStatBoxClicks();
   setupModalClose();
+  setupLocalBlocklistInput();
   document.getElementById('btnClear').addEventListener('click', clearData);
   document.getElementById('btnRefresh').addEventListener('click', loadDashboard);
   refreshInterval = setInterval(loadDashboard, 4000);
@@ -95,6 +96,7 @@ function renderAll(data) {
   renderTrackers(data.trackers || []);
   renderScriptScans(data.scriptScans || []);
   renderBehavioralAlerts(data.behavioralAlerts || []);
+  renderLocalBlocklist(data.localBlockedDomains || []);
 }
 
 // ─── Overview ─────────────────────────────────────────────────────────────────
@@ -573,4 +575,81 @@ function renderBehavioralAlerts(alerts) {
       </div>
     `;
   }).join('');
+}
+
+function setupLocalBlocklistInput() {
+  const addBlockBtn = document.getElementById('addBlockBtn');
+  const addBlockInput = document.getElementById('addBlockInput');
+  if (addBlockBtn && addBlockInput) {
+    addBlockBtn.addEventListener('click', () => {
+      const domain = addBlockInput.value.trim();
+      if (!domain) return;
+      chrome.runtime.sendMessage({ action: 'addLocalBlockDomain', domain }, (res) => {
+        if (res && res.success) {
+          addBlockInput.value = '';
+          loadDashboard();
+        }
+      });
+    });
+    addBlockInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        addBlockBtn.click();
+      }
+    });
+  }
+}
+
+function renderLocalBlocklist(domains) {
+  const container = document.getElementById('localBlocklistContent');
+  if (!container) return;
+
+  if (domains.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">No custom blocked domains added yet. Trackers detected will be automatically logged and blocked here.</div>
+    `;
+    return;
+  }
+
+  let html = `
+    <table class="data-table" style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+      <thead>
+        <tr style="border-bottom: 2px solid var(--border); text-align: left; font-size: 12px; color: var(--muted);">
+          <th style="padding: 12px 16px;">Blocked Domain</th>
+          <th style="padding: 12px 16px; width: 100px; text-align: right;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  domains.forEach(domain => {
+    html += `
+      <tr style="border-bottom: 1px solid var(--border); font-size: 13px;">
+        <td style="padding: 12px 16px; color: var(--text); font-family: var(--mono); font-weight: 500;">${escHtml(domain)}</td>
+        <td style="padding: 12px 16px; text-align: right;">
+          <button class="btn btn-ghost remove-block-btn" data-domain="${escHtml(domain)}" style="padding: 4px 10px; font-size: 11px; color: var(--red); border: 1px solid rgba(239, 68, 68, 0.2); background: rgba(239, 68, 68, 0.05); border-radius: 6px; cursor: pointer; transition: all 0.2s;">
+            Remove
+          </button>
+        </td>
+      </tr>
+    `;
+  });
+
+  html += `
+      </tbody>
+    </table>
+  `;
+
+  container.innerHTML = html;
+
+  // Bind click listeners to remove buttons
+  container.querySelectorAll('.remove-block-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const domain = e.target.dataset.domain;
+      chrome.runtime.sendMessage({ action: 'removeLocalBlockDomain', domain }, (res) => {
+        if (res && res.success) {
+          loadDashboard();
+        }
+      });
+    });
+  });
 }

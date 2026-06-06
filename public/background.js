@@ -1,5 +1,5 @@
 /**
- * Security Extension - Background Service Worker v2.3.2
+ * Security Extension - Background Service Worker v2.3.3
  * 
  * Persistent & Robust for Manifest V3:
  *  - Persists state in chrome.storage.session to survive Service Worker idle terminations.
@@ -23,6 +23,7 @@ const securityData = {
   pageData: {},       // tabId → pageAnalysis
   scriptScans: {},    // tabId → [{...}]
   behavioralAlerts: {}, // tabId → [{...}]
+  localBlockedDomains: [], // Array of hostnames blocked dynamically by user/system
   settings: {
     debuggerEnabled: false,
     heuristicsEnabled: true,
@@ -43,6 +44,9 @@ const stateLoaded = new Promise((resolve) => {
     chrome.storage.session.get(['securityData'], (result) => {
       if (result?.securityData) {
         Object.assign(securityData, result.securityData);
+        if (!securityData.localBlockedDomains) {
+          securityData.localBlockedDomains = [];
+        }
       }
       resolve();
     });
@@ -569,6 +573,17 @@ chrome.webRequest.onHeadersReceived.addListener(
         };
       }
       trackers[domain].requests++;
+
+      // Automatically auto-block this tracker for future visits by saving it locally
+      if (!securityData.localBlockedDomains) {
+        securityData.localBlockedDomains = [];
+      }
+      if (!securityData.localBlockedDomains.includes(domain)) {
+        securityData.localBlockedDomains.push(domain);
+        saveState();
+        setupDeclarativeRules();
+        console.log('[Shield active block] Automatically registered tracker to local blocklist:', domain);
+      }
     }
     saveState();
   },
@@ -706,6 +721,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           payloadAlerts: isSystemPage ? [] : payloadAlerts,
           scriptScans: isSystemPage ? [] : (securityData.scriptScans[tabId] || []),
           behavioralAlerts: isSystemPage ? [] : (securityData.behavioralAlerts[tabId] || []),
+          localBlockedDomains: securityData.localBlockedDomains || [],
           audit,
           tabId,
         };
@@ -802,6 +818,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         chrome.tabs.sendMessage(tabId, { action: 'setFirewall', enabled: request.enabled }).catch(() => {});
       }
       sendResponse({ success: true });
+      return;
+    }
+
+    if (request.action === 'addLocalBlockDomain') {
+      const domain = request.domain.trim().toLowerCase();
+      if (domain && !securityData.localBlockedDomains.includes(domain)) {
+        securityData.localBlockedDomains.push(domain);
+        saveState();
+        setupDeclarativeRules();
+      }
+      sendResponse({ success: true, localBlockedDomains: securityData.localBlockedDomains });
+      return;
+    }
+
+    if (request.action === 'removeLocalBlockDomain') {
+      const domain = request.domain.trim().toLowerCase();
+      securityData.localBlockedDomains = securityData.localBlockedDomains.filter(d => d !== domain);
+      saveState();
+      setupDeclarativeRules();
+      sendResponse({ success: true, localBlockedDomains: securityData.localBlockedDomains });
       return;
     }
   });
@@ -927,7 +963,7 @@ if (chrome.downloads) {
   }
 }
 
-console.log('[Security Extension] Background worker v2.3.2 initialized');
+console.log('[Security Extension] Background worker v2.3.3 initialized');
 
 // ─── Declarative Net Request Dynamic Rules ───────────────────────────────────
 function setupDeclarativeRules() {

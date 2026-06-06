@@ -719,7 +719,7 @@
     </div>
     <div>
       <div class="logo-text">Shield Dashboard</div>
-      <span class="logo-sub">v2.3.2 · Control Center</span>
+      <span class="logo-sub">v2.3.3 · Control Center</span>
     </div>
   </a>
   <div class="topbar-mid"></div>
@@ -788,6 +788,9 @@
     <button class="tab-btn" data-tab="behavioral">
       Behavioral Shield
       <span class="tab-badge" id="behavioralBadge"></span>
+    </button>
+    <button class="tab-btn" data-tab="local-blocklist">
+      Local Blocklist
     </button>
 
   </nav>
@@ -918,6 +921,20 @@
         <div class="card-title">👤 Fingerprinting & Cryptojacking Mitigation Logs</div>
         <div id="behavioralContent">
           <div class="empty-state">No behavioral heuristics triggered yet. Keeps monitoring API canvas/audio reads.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Local Blocklist -->
+    <div id="panel-local-blocklist" class="tab-panel">
+      <div class="card">
+        <div class="card-title">🛡️ Active Firewall Local Blocklist</div>
+        <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 10px;">
+          <input type="text" id="addBlockInput" placeholder="Enter domain name (e.g. ad.tracking.net)" style="flex: 1; padding: 8px 12px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px;">
+          <button class="btn btn-primary" id="addBlockBtn" style="padding: 8px 16px; margin: 0; font-size: 12.5px;">Block Domain</button>
+        </div>
+        <div id="localBlocklistContent">
+          <div class="empty-state">No custom blocked domains added yet. Trackers detected will be automatically logged and blocked here.</div>
         </div>
       </div>
     </div>
