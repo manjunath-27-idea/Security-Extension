@@ -1,5 +1,5 @@
 /**
- * Security Extension - Background Service Worker v2.4.1
+ * Security Extension - Background Service Worker v2.4.2
  * 
  * Persistent & Robust for Manifest V3:
  *  - Persists state in chrome.storage.session to survive Service Worker idle terminations.
@@ -97,6 +97,9 @@ const stateLoaded = new Promise((resolve) => {
         Object.assign(securityData, result.securityData);
         if (!securityData.localBlockedDomains) {
           securityData.localBlockedDomains = [];
+        }
+        if (!securityData.blockedDomainsMetadata) {
+          securityData.blockedDomainsMetadata = {};
         }
       }
       resolve();
@@ -556,9 +559,19 @@ function getGrade(score) {
 // ─── Tab Listeners ────────────────────────────────────────────────────────────
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
   await stateLoaded;
-  securityData.activeTab = activeInfo.tabId;
-  chrome.storage.session.set({ activeTab: activeInfo.tabId });
-  saveState();
+  chrome.tabs.get(activeInfo.tabId, (tab) => {
+    if (chrome.runtime.lastError || !tab) return;
+    if (tab.url) {
+      try {
+        const u = new URL(tab.url);
+        if (u.protocol === 'http:' || u.protocol === 'https:') {
+          securityData.activeTab = activeInfo.tabId;
+          chrome.storage.session.set({ activeTab: activeInfo.tabId });
+          saveState();
+        }
+      } catch {}
+    }
+  });
 });
 
 // ─── Network Listeners ────────────────────────────────────────────────────────
@@ -580,12 +593,13 @@ function checkTracker(domain) {
 }
 
 // Helper to record a detected tracker domain
-function recordTracker(tabId, domain, tracker) {
+function recordTracker(tabId, domain, tracker, sourceUrl) {
   if (!tabId || tabId === -1) return;
   if (!securityData.trackers[tabId]) {
     securityData.trackers[tabId] = {};
   }
   const trackers = securityData.trackers[tabId];
+  const resolvedSource = sourceUrl || 'Direct Access';
   if (!trackers[domain]) {
     trackers[domain] = {
       id: `tracker-${domain}`,
@@ -595,6 +609,7 @@ function recordTracker(tabId, domain, tracker) {
       requests: 0,
       riskLevel: tracker.risk,
       dataCollected: getTrackerData(tracker.name),
+      sourceUrl: resolvedSource,
     };
   }
   trackers[domain].requests++;
@@ -603,10 +618,22 @@ function recordTracker(tabId, domain, tracker) {
   if (!securityData.localBlockedDomains) {
     securityData.localBlockedDomains = [];
   }
+  if (!securityData.blockedDomainsMetadata) {
+    securityData.blockedDomainsMetadata = {};
+  }
   if (!securityData.localBlockedDomains.includes(domain)) {
     securityData.localBlockedDomains.push(domain);
+    securityData.blockedDomainsMetadata[domain] = {
+      sourceUrl: resolvedSource,
+      timestamp: Date.now()
+    };
     setupDeclarativeRules();
-    console.log('[Shield active block] Automatically registered tracker to local blocklist:', domain);
+    console.log('[Shield active block] Automatically registered tracker to local blocklist:', domain, 'found on:', resolvedSource);
+  } else if (!securityData.blockedDomainsMetadata[domain]) {
+    securityData.blockedDomainsMetadata[domain] = {
+      sourceUrl: resolvedSource,
+      timestamp: Date.now()
+    };
   }
 }
 
@@ -666,7 +693,8 @@ chrome.webRequest.onBeforeRequest.addListener(
     let threatType = null;
     if (!isBlockedDomain) {
       if (tracker) {
-        recordTracker(details.tabId, domain, tracker);
+        const sourceUrl = details.initiator || (details.type === 'main_frame' ? 'Direct navigation' : 'Unknown');
+        recordTracker(details.tabId, domain, tracker, sourceUrl);
         threatType = `Tracker (${tracker.name})`;
       } else if (!isSecure) {
         threatType = `Insecure HTTP (${domain})`;
@@ -688,6 +716,7 @@ chrome.webRequest.onBeforeRequest.addListener(
       timestamp: new Date().toISOString(),
       size: 0,
       status: isBlockedDomain ? 'BLOCKED' : 0,
+      initiator: details.initiator || null,
     });
     if (reqs.length > 100) reqs.shift();
 
@@ -737,11 +766,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     if (request.action === 'getSecurityData') {
-      const getResponse = (isSystemPage = false) => {
-        const requests = securityData.requests[tabId] || [];
-        const headersMap = securityData.headers[tabId] || {};
-        const trackers = securityData.trackers[tabId] || {};
-        const payloadAlerts = securityData.payloadAlerts[tabId] || [];
+      // Determine tab to inspect
+      let targetTabId = request.tabId;
+      if (!targetTabId && securityData.activeTab) {
+        targetTabId = securityData.activeTab;
+      }
+      if (!targetTabId && sender?.tab?.id) {
+        targetTabId = sender.tab.id;
+      }
+
+      const getResponse = (tid, isSystemPage = false) => {
+        const requests = securityData.requests[tid] || [];
+        const headersMap = securityData.headers[tid] || {};
+        const trackers = securityData.trackers[tid] || {};
+        const payloadAlerts = securityData.payloadAlerts[tid] || [];
 
         const flatHeaders = [];
         Object.entries(headersMap).forEach(([domain, dh]) => {
@@ -750,7 +788,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           });
         });
 
-        let audit = generateAudit(tabId);
+        let audit = generateAudit(tid);
 
         if (isSystemPage) {
           audit = {
@@ -786,18 +824,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           headers: finalHeaders,
           trackers: isSystemPage ? [] : Object.values(trackers),
           payloadAlerts: isSystemPage ? [] : payloadAlerts,
-          scriptScans: isSystemPage ? [] : (securityData.scriptScans[tabId] || []),
-          behavioralAlerts: isSystemPage ? [] : (securityData.behavioralAlerts[tabId] || []),
+          scriptScans: isSystemPage ? [] : (securityData.scriptScans[tid] || []),
+          behavioralAlerts: isSystemPage ? [] : (securityData.behavioralAlerts[tid] || []),
           localBlockedDomains: securityData.localBlockedDomains || [],
+          blockedDomainsMetadata: securityData.blockedDomainsMetadata || {},
           audit,
-          tabId,
+          tabId: tid,
         };
       };
 
-      if (tabId && tabId !== -1) {
-        chrome.tabs.get(tabId, (tab) => {
+      if (targetTabId && targetTabId !== -1) {
+        chrome.tabs.get(targetTabId, (tab) => {
           if (chrome.runtime.lastError || !tab) {
-            sendResponse(getResponse(false));
+            sendResponse(getResponse(targetTabId, false));
             return;
           }
           let isSystem = false;
@@ -811,10 +850,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               isSystem = true;
             }
           }
-          sendResponse(getResponse(isSystem));
+          
+          // If it is a system/extension page and the caller did not specify a tabId,
+          // check if we can fall back to the last active web tab
+          if (isSystem && !request.tabId && securityData.activeTab && securityData.activeTab !== targetTabId) {
+            chrome.tabs.get(securityData.activeTab, (activeTab) => {
+              if (!chrome.runtime.lastError && activeTab && activeTab.url) {
+                try {
+                  const au = new URL(activeTab.url);
+                  if (au.protocol === 'http:' || au.protocol === 'https:') {
+                    sendResponse(getResponse(securityData.activeTab, false));
+                    return;
+                  }
+                } catch {}
+              }
+              sendResponse(getResponse(targetTabId, isSystem));
+            });
+          } else {
+            sendResponse(getResponse(targetTabId, isSystem));
+          }
         });
       } else {
-        sendResponse(getResponse(false));
+        sendResponse(getResponse(targetTabId, false));
       }
       return;
     }
@@ -893,6 +950,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const domain = request.domain.trim().toLowerCase();
       if (domain && !securityData.localBlockedDomains.includes(domain)) {
         securityData.localBlockedDomains.push(domain);
+        if (!securityData.blockedDomainsMetadata) {
+          securityData.blockedDomainsMetadata = {};
+        }
+        securityData.blockedDomainsMetadata[domain] = {
+          sourceUrl: 'Manually Added',
+          timestamp: Date.now()
+        };
         saveStateAndNotify(tabId);
         setupDeclarativeRules();
       }
@@ -903,6 +967,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'removeLocalBlockDomain') {
       const domain = request.domain.trim().toLowerCase();
       securityData.localBlockedDomains = securityData.localBlockedDomains.filter(d => d !== domain);
+      if (securityData.blockedDomainsMetadata) {
+        delete securityData.blockedDomainsMetadata[domain];
+      }
       saveStateAndNotify(tabId);
       setupDeclarativeRules();
       sendResponse({ success: true, localBlockedDomains: securityData.localBlockedDomains });
@@ -1025,7 +1092,7 @@ if (chrome.downloads) {
   }
 }
 
-console.log('[Security Extension] Background worker v2.4.1 initialized');
+console.log('[Security Extension] Background worker v2.4.2 initialized');
 
 // ─── Declarative Net Request Dynamic Rules ───────────────────────────────────
 function setupDeclarativeRules() {
@@ -1090,6 +1157,7 @@ if (chrome.declarativeNetRequest?.onRuleMatchedDebug) {
       securityData.trackers[tabId] = {};
     }
     const trackers = securityData.trackers[tabId];
+    const sourceUrl = info.request.initiator || 'Direct Access';
     if (!trackers[domain]) {
       trackers[domain] = {
         id: `dnr-${domain}`,
@@ -1099,6 +1167,7 @@ if (chrome.declarativeNetRequest?.onRuleMatchedDebug) {
         requests: 0,
         riskLevel: 'critical',
         dataCollected: ['DNR Blocked domain request'],
+        sourceUrl: sourceUrl,
       };
     }
     trackers[domain].requests++;

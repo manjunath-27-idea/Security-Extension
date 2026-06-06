@@ -1,5 +1,5 @@
 /**
- * Security Extension - Redesigned Dashboard Script v2.4.1
+ * Security Extension - Redesigned Dashboard Script v2.4.2
  */
 
 let currentTabId = null;
@@ -7,20 +7,48 @@ let refreshInterval = null;
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tab = tabs[0];
-    if (!tab) return;
-    currentTabId = tab.id;
-    const currentSiteEl = document.getElementById('currentSite');
-    if (currentSiteEl) {
-      try {
-        currentSiteEl.textContent = new URL(tab.url).hostname;
-      } catch {
-        currentSiteEl.textContent = 'Unknown';
-      }
+  const urlParams = new URLSearchParams(window.location.search);
+  const paramTabId = urlParams.get('tabId');
+  
+  const initDashboardForTab = (tabId) => {
+    currentTabId = tabId;
+    
+    // Query tab details to get hostname
+    if (currentTabId) {
+      chrome.tabs.get(currentTabId, (tab) => {
+        if (!chrome.runtime.lastError && tab && tab.url) {
+          const currentSiteEl = document.getElementById('currentSite');
+          if (currentSiteEl) {
+            try {
+              currentSiteEl.textContent = new URL(tab.url).hostname;
+            } catch {
+              currentSiteEl.textContent = 'Unknown';
+            }
+          }
+        }
+      });
     }
     loadDashboard();
-  });
+  };
+
+  if (paramTabId) {
+    initDashboardForTab(parseInt(paramTabId, 10));
+  } else {
+    // Fallback: ask background what the activeTab is
+    chrome.runtime.sendMessage({ action: 'getSecurityData' }, (response) => {
+      if (response && response.tabId) {
+        initDashboardForTab(response.tabId);
+      } else {
+        // Ultimate fallback
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          const tab = tabs[0];
+          if (tab) {
+            initDashboardForTab(tab.id);
+          }
+        });
+      }
+    });
+  }
 
   setupTabs();
   setupFirewallToggle();
@@ -107,7 +135,7 @@ function renderAll(data) {
   renderTrackers(data.trackers || []);
   renderScriptScans(data.scriptScans || []);
   renderBehavioralAlerts(data.behavioralAlerts || []);
-  renderLocalBlocklist(data.localBlockedDomains || []);
+  renderLocalBlocklist(data.localBlockedDomains || [], data.blockedDomainsMetadata || {});
 }
 
 // ─── Overview ─────────────────────────────────────────────────────────────────
@@ -329,7 +357,7 @@ function renderTrackers(trackers) {
         <span class="trk-cat">${escHtml(t.category)}</span>
         <span class="sev-badge ${t.riskLevel === 'high' ? 'critical' : t.riskLevel}">${t.riskLevel.toUpperCase()} RISK</span>
       </div>
-      <div class="trk-domain">${escHtml(t.domain)} • ${t.requests} requests</div>
+      <div class="trk-domain">${escHtml(t.domain)} • ${t.requests} requests • Source: ${escHtml(t.sourceUrl || 'Direct Access')}</div>
       <div class="trk-data">${(t.dataCollected || []).map(d => escHtml(d)).join(' · ')}</div>
     </div>
   `).join('');
@@ -610,7 +638,7 @@ function setupLocalBlocklistInput() {
   }
 }
 
-function renderLocalBlocklist(domains) {
+function renderLocalBlocklist(domains, metadata = {}) {
   const container = document.getElementById('localBlocklistContent');
   if (!container) return;
 
@@ -626,6 +654,7 @@ function renderLocalBlocklist(domains) {
       <thead>
         <tr style="border-bottom: 2px solid var(--border); text-align: left; font-size: 12px; color: var(--muted);">
           <th style="padding: 12px 16px;">Blocked Domain</th>
+          <th style="padding: 12px 16px;">First Found On (Source)</th>
           <th style="padding: 12px 16px; width: 100px; text-align: right;">Action</th>
         </tr>
       </thead>
@@ -633,9 +662,12 @@ function renderLocalBlocklist(domains) {
   `;
 
   domains.forEach(domain => {
+    const meta = metadata[domain] || {};
+    const source = meta.sourceUrl || 'Auto / Default Block';
     html += `
       <tr style="border-bottom: 1px solid var(--border); font-size: 13px;">
         <td style="padding: 12px 16px; color: var(--text); font-family: var(--mono); font-weight: 500;">${escHtml(domain)}</td>
+        <td style="padding: 12px 16px; color: var(--muted);">${escHtml(source)}</td>
         <td style="padding: 12px 16px; text-align: right;">
           <button class="btn btn-ghost remove-block-btn" data-domain="${escHtml(domain)}" style="padding: 4px 10px; font-size: 11px; color: var(--red); border: 1px solid rgba(239, 68, 68, 0.2); background: rgba(239, 68, 68, 0.05); border-radius: 6px; cursor: pointer; transition: all 0.2s;">
             Remove

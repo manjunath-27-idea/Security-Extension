@@ -1,5 +1,5 @@
 /**
- * Security Extension - Redesigned Popup Script v2.4.1
+ * Security Extension - Redesigned Popup Script v2.4.2
  */
 
 let currentTabId = null;
@@ -198,7 +198,7 @@ function toggleFirewall() {
 }
 
 function openDashboard() {
-  chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+  chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html?tabId=' + currentTabId) });
 }
 
 function clearData() {

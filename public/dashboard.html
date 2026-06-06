@@ -4,42 +4,42 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Security Control Center</title>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
     :root {
-      --bg: #07060b;
-      --surface: #0e0d14;
-      --surface2: #14131c;
-      --border: rgba(255, 255, 255, 0.04);
-      --border-accent: rgba(99, 102, 241, 0.25);
-      --text: #f3f3f6;
-      --muted: #6a6977;
-      --dim: #2e2c39;
+      --bg: #0a0a0f;
+      --surface: #111118;
+      --surface2: #16161f;
+      --border: rgba(255, 255, 255, 0.06);
+      --border-accent: rgba(129, 140, 248, 0.3);
+      --text: #eeeef2;
+      --muted: #65647a;
+      --dim: #2a293a;
       --blue: #3b82f6;
-      --indigo: #6366f1;
-      --indigo-glow: rgba(99, 102, 241, 0.2);
-      --green: #10b981;
-      --yellow: #f59e0b;
-      --orange: #f97316;
-      --red: #ef4444;
+      --indigo: #818cf8;
+      --indigo-glow: rgba(129, 140, 248, 0.15);
+      --green: #34d399;
+      --yellow: #fbbf24;
+      --orange: #fb923c;
+      --red: #f87171;
       --mono: 'JetBrains Mono', monospace;
-      --sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+      --sans: 'Inter', system-ui, sans-serif;
     }
 
     [data-theme="light"] {
-      --bg: #f3f4f6;
+      --bg: #f5f5f7;
       --surface: #ffffff;
-      --surface2: #f9fafb;
-      --border: rgba(0, 0, 0, 0.08);
-      --border-accent: rgba(79, 70, 229, 0.3);
-      --text: #111827;
-      --muted: #6b7280;
-      --dim: #e5e7eb;
+      --surface2: #fafafa;
+      --border: rgba(0, 0, 0, 0.07);
+      --border-accent: rgba(99, 102, 241, 0.25);
+      --text: #1a1a2e;
+      --muted: #71717a;
+      --dim: #e4e4e7;
       --blue: #2563eb;
-      --indigo: #4f46e5;
-      --indigo-glow: rgba(79, 70, 229, 0.1);
+      --indigo: #6366f1;
+      --indigo-glow: rgba(99, 102, 241, 0.08);
       --green: #059669;
       --yellow: #d97706;
       --orange: #ea580c;
@@ -47,7 +47,8 @@
     }
 
     [data-theme="light"] .topbar {
-      background: rgba(243, 244, 246, 0.85) !important;
+      background: rgba(245, 245, 247, 0.88) !important;
+      backdrop-filter: blur(20px) !important;
     }
 
     [data-theme="light"] .tab-btn:hover {
@@ -101,6 +102,70 @@
       min-height: 100vh;
       line-height: 1.5;
       overflow-x: hidden;
+    }
+
+    /* ── Animated Background ── */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 0;
+      background:
+        radial-gradient(ellipse 600px 400px at 10% 20%, rgba(129, 140, 248, 0.06) 0%, transparent 70%),
+        radial-gradient(ellipse 500px 350px at 85% 60%, rgba(99, 102, 241, 0.04) 0%, transparent 70%),
+        radial-gradient(ellipse 400px 300px at 50% 90%, rgba(52, 211, 153, 0.03) 0%, transparent 70%);
+      animation: bgPulse 12s ease-in-out infinite alternate;
+    }
+
+    [data-theme="light"] body::before {
+      background:
+        radial-gradient(ellipse 600px 400px at 10% 20%, rgba(99, 102, 241, 0.05) 0%, transparent 70%),
+        radial-gradient(ellipse 500px 350px at 85% 60%, rgba(129, 140, 248, 0.04) 0%, transparent 70%),
+        radial-gradient(ellipse 400px 300px at 50% 90%, rgba(5, 150, 105, 0.03) 0%, transparent 70%);
+    }
+
+    @keyframes bgPulse {
+      0% { opacity: 0.6; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.03); }
+      100% { opacity: 0.7; transform: scale(0.98); }
+    }
+
+    body > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    [data-theme="light"] .stat-box:hover {
+      border-color: rgba(99, 102, 241, 0.25) !important;
+      background: rgba(99, 102, 241, 0.03) !important;
+    }
+
+    [data-theme="light"] .score-ring-bg {
+      stroke: rgba(0, 0, 0, 0.04) !important;
+    }
+
+    [data-theme="light"] .card {
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+    }
+
+    [data-theme="light"] .empty-state {
+      color: var(--muted) !important;
+    }
+
+    [data-theme="light"] .sidebar {
+      background: rgba(255, 255, 255, 0.7) !important;
+      backdrop-filter: blur(12px) !important;
+    }
+
+    [data-theme="light"] .tracker-item {
+      background: rgba(0, 0, 0, 0.01) !important;
+    }
+
+    [data-theme="light"] #addBlockInput {
+      background: rgba(0, 0, 0, 0.03) !important;
+      color: var(--text) !important;
     }
 
     /* ── Top Bar ── */
