@@ -1,5 +1,5 @@
 /**
- * Security Extension - Background Service Worker v2.3.1
+ * Security Extension - Background Service Worker v2.3.2
  * 
  * Persistent & Robust for Manifest V3:
  *  - Persists state in chrome.storage.session to survive Service Worker idle terminations.
@@ -927,7 +927,7 @@ if (chrome.downloads) {
   }
 }
 
-console.log('[Security Extension] Background worker v2.3.1 initialized');
+console.log('[Security Extension] Background worker v2.3.2 initialized');
 
 // ─── Declarative Net Request Dynamic Rules ───────────────────────────────────
 function setupDeclarativeRules() {
@@ -1028,6 +1028,36 @@ if (chrome.declarativeNetRequest?.onRuleMatchedDebug) {
 // ─── Debugger API Attachment & Events ─────────────────────────────────────────
 const attachedTabs = new Set();
 
+function isSensitiveUrl(urlString) {
+  if (!urlString) return false;
+  try {
+    const url = new URL(urlString);
+    const host = url.hostname.toLowerCase();
+    
+    // 1. Exclude government and military portals
+    const govtSuffixes = ['.gov', '.gov.in', '.nic.in', '.govt.nz', '.gov.uk', '.gov.au', '.mil'];
+    if (govtSuffixes.some(suffix => host.endsWith(suffix))) {
+      return true;
+    }
+    
+    // 2. Exclude common banking, payment, and crypto exchanges
+    const bankingKeywords = ['bank', 'paypal', 'stripe', 'chase', 'hsbc', 'barclays', 'fidelity', 'wellsfargo', 'capitalone', 'coinbase', 'binance'];
+    if (bankingKeywords.some(keyword => host.includes(keyword))) {
+      return true;
+    }
+    
+    // 3. Exclude single sign-on / authentication domains
+    const sensitiveHosts = ['accounts.google.com', 'login.microsoftonline.com', 'appleid.apple.com'];
+    if (sensitiveHosts.some(sHost => host === sHost)) {
+      return true;
+    }
+    
+    return false;
+  } catch {
+    return true; // Safe default: treat unparseable URLs as sensitive
+  }
+}
+
 function attachDebugger(tabId) {
   if (!securityData.settings.debuggerEnabled) return;
   if (tabId === -1 || !tabId) return;
@@ -1035,8 +1065,15 @@ function attachDebugger(tabId) {
 
   chrome.tabs.get(tabId, (tab) => {
     if (chrome.runtime.lastError || !tab) return;
-    if (tab.url && (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://'))) {
-      return;
+    
+    if (tab.url) {
+      if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+        return;
+      }
+      if (isSensitiveUrl(tab.url)) {
+        console.log('[Shield Debugger] Bypassing sensitive/govt domain:', tab.url);
+        return;
+      }
     }
 
     chrome.debugger.attach({ tabId }, '1.3', () => {
