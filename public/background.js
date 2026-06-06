@@ -1,5 +1,5 @@
 /**
- * Security Extension - Background Service Worker v2.3.0
+ * Security Extension - Background Service Worker v2.3.1
  * 
  * Persistent & Robust for Manifest V3:
  *  - Persists state in chrome.storage.session to survive Service Worker idle terminations.
@@ -876,6 +876,16 @@ if (chrome.downloads) {
           console.warn('[Shield Firewall] Suspicious download PAUSED:', filename);
           const cleanName = filename.replace(/^.*[\\\/]/, '');
 
+          // Find the active tab to display the page-level toast notification
+          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0]?.id) {
+              chrome.tabs.sendMessage(tabs[0].id, {
+                action: 'incrementThreatCount',
+                type: `Suspicious Download Paused (${cleanName || 'unknown'})`
+              }).catch(() => {});
+            }
+          });
+
           chrome.notifications?.create({
             type: 'basic',
             iconUrl: 'images/icon-48.png',
@@ -917,7 +927,7 @@ if (chrome.downloads) {
   }
 }
 
-console.log('[Security Extension] Background worker v2.3.0 initialized');
+console.log('[Security Extension] Background worker v2.3.1 initialized');
 
 // ─── Declarative Net Request Dynamic Rules ───────────────────────────────────
 function setupDeclarativeRules() {
@@ -963,8 +973,19 @@ if (chrome.declarativeNetRequest?.onRuleMatchedDebug) {
 
     const domain = getDomain(info.request.url) || 'Blocked Threat';
     
+    // Categorize specific blocked domains for the visual toast notification
+    const DNR_THREAT_LABELS = {
+      'urlhaus-test.malware-cnc.biz': 'Malware C&C',
+      'coinhive.com': 'Cryptominer Malware',
+      'miner.c3pool.com': 'Cryptominer Malware',
+      'malicious-tracker-test.com': 'Malicious Tracker',
+      'bad-adserver.net': 'Adware/Tracker'
+    };
+    const threatLabel = DNR_THREAT_LABELS[domain] || 'Malicious Threat';
+    const typeMsg = `${threatLabel} (${domain})`;
+
     // Notify the active tab content script
-    chrome.tabs.sendMessage(tabId, { action: 'incrementThreatCount', type: `Native DNR Block (${domain})` }).catch(() => {});
+    chrome.tabs.sendMessage(tabId, { action: 'incrementThreatCount', type: typeMsg }).catch(() => {});
 
     if (!securityData.trackers[tabId]) {
       securityData.trackers[tabId] = {};
@@ -1086,6 +1107,10 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
           });
           if (scans.length > 50) scans.shift();
           saveState();
+
+          // Notify the active tab content script
+          const cleanScriptUrl = url.split('/').pop() || 'external script';
+          chrome.tabs.sendMessage(tabId, { action: 'incrementThreatCount', type: `Suspicious Script (${cleanScriptUrl})` }).catch(() => {});
 
           const hasCritical = findings.some(f => f.severity === 'critical');
           if (hasCritical) {

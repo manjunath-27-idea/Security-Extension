@@ -1,5 +1,5 @@
 /**
- * Security Extension - Redesigned Dashboard Script v2.3.0
+ * Security Extension - Redesigned Dashboard Script v2.3.1
  */
 
 let currentTabId = null;

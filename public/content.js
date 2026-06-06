@@ -163,76 +163,113 @@ function showSecurityToast(count, lastThreatType) {
     const style = document.createElement('style');
     style.id = '__secext_toast_styles';
     style.textContent = `
+      .__secext_toast_container, .__secext_toast_container * {
+        box-sizing: border-box !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1.4 !important;
+        letter-spacing: normal !important;
+        text-transform: none !important;
+        text-align: left !important;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+      }
       .__secext_toast_container {
-        position: fixed;
-        bottom: 24px;
-        right: 24px;
-        z-index: 2147483647;
-        background: rgba(9, 8, 15, 0.95);
-        backdrop-filter: blur(12px);
-        border: 1px solid rgba(99, 102, 241, 0.35);
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(99, 102, 241, 0.2);
-        color: #f1f1f5;
-        padding: 12px 18px;
-        border-radius: 12px;
-        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-        font-size: 12.5px;
-        font-weight: 500;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        min-width: 280px;
-        max-width: 380px;
-        transform: translateY(100px);
-        opacity: 0;
-        transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
-        pointer-events: none;
+        position: fixed !important;
+        bottom: 24px !important;
+        right: 24px !important;
+        z-index: 2147483647 !important;
+        background: rgba(13, 11, 23, 0.92) !important;
+        backdrop-filter: blur(16px) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(16px) saturate(180%) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-top: 1px solid rgba(255, 255, 255, 0.15) !important;
+        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45), 0 0 20px rgba(99, 102, 241, 0.15) !important;
+        color: #f1f1f5 !important;
+        padding: 14px 18px !important;
+        border-radius: 16px !important;
+        display: flex !important;
+        align-items: center !important;
+        gap: 14px !important;
+        min-width: 320px !important;
+        max-width: 420px !important;
+        transform: translateY(120px) scale(0.95) !important;
+        opacity: 0 !important;
+        transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease !important;
+        pointer-events: none !important;
       }
       .__secext_toast_container.show {
-        transform: translateY(0);
-        opacity: 1;
-        pointer-events: auto;
+        transform: translateY(0) scale(1) !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
       }
       .__secext_toast_icon {
-        width: 30px;
-        height: 30px;
-        background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-size: 15px;
-        flex-shrink: 0;
-        box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+        width: 36px !important;
+        height: 36px !important;
+        border-radius: 10px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        color: white !important;
+        font-size: 18px !important;
+        flex-shrink: 0 !important;
+      }
+      .__secext_toast_icon.tracker {
+        background: linear-gradient(135deg, #3182ce 0%, #319795 100%) !important;
+        box-shadow: 0 4px 12px rgba(49, 130, 206, 0.35) !important;
+      }
+      .__secext_toast_icon.malware {
+        background: linear-gradient(135deg, #e53e3e 0%, #805ad5 100%) !important;
+        box-shadow: 0 4px 12px rgba(229, 62, 62, 0.35) !important;
+      }
+      .__secext_toast_icon.leak {
+        background: linear-gradient(135deg, #b7791f 0%, #e53e3e 100%) !important;
+        box-shadow: 0 4px 12px rgba(183, 121, 31, 0.35) !important;
+      }
+      .__secext_toast_icon.download {
+        background: linear-gradient(135deg, #dd6b20 0%, #d69e2e 100%) !important;
+        box-shadow: 0 4px 12px rgba(221, 107, 32, 0.35) !important;
+      }
+      .__secext_toast_icon.behavior {
+        background: linear-gradient(135deg, #805ad5 0%, #319795 100%) !important;
+        box-shadow: 0 4px 12px rgba(128, 90, 213, 0.35) !important;
+      }
+      .__secext_toast_icon.script {
+        background: linear-gradient(135deg, #4a5568 0%, #718096 100%) !important;
+        box-shadow: 0 4px 12px rgba(74, 85, 104, 0.35) !important;
+      }
+      .__secext_toast_icon.default {
+        background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%) !important;
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35) !important;
       }
       .__secext_toast_body {
-        flex: 1;
-        min-width: 0;
+        flex: 1 !important;
+        min-width: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
       }
       .__secext_toast_title {
-        font-weight: 800;
-        color: white;
-        margin-bottom: 1px;
-        font-size: 13px;
-        letter-spacing: -0.1px;
+        font-weight: 700 !important;
+        color: #ffffff !important;
+        margin-bottom: 2px !important;
+        font-size: 13.5px !important;
+        letter-spacing: -0.2px !important;
       }
       .__secext_toast_desc {
-        color: #a1a0b0;
-        font-size: 10.5px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        color: #a0aec0 !important;
+        font-size: 11px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
       }
       .__secext_toast_badge {
-        background: #ef4444;
-        color: white;
-        font-size: 10px;
-        font-weight: 700;
-        padding: 2px 7px;
-        border-radius: 20px;
-        flex-shrink: 0;
-        box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
+        background: #e53e3e !important;
+        color: white !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        padding: 3px 8px !important;
+        border-radius: 9999px !important;
+        flex-shrink: 0 !important;
+        box-shadow: 0 2px 8px rgba(229, 62, 62, 0.3) !important;
       }
     `;
     document.head.appendChild(style);
@@ -244,17 +281,50 @@ function showSecurityToast(count, lastThreatType) {
     document.body.appendChild(toastEl);
   }
 
+  // Determine threat category visual styles
+  let icon = '🛡️';
+  let gradientClass = 'default';
+  let title = 'Shield Active Protection';
+  const typeLower = lastThreatType.toLowerCase();
+
+  if (typeLower.includes('tracker') || typeLower.includes('analytics')) {
+    icon = '👁️';
+    gradientClass = 'tracker';
+    title = 'Privacy Tracker Blocked';
+  } else if (typeLower.includes('malware') || typeLower.includes('dnr') || typeLower.includes('miner')) {
+    icon = '🚨';
+    gradientClass = 'malware';
+    title = 'Malware Domain Blocked';
+  } else if (typeLower.includes('payload') || typeLower.includes('leak') || typeLower.includes('critical')) {
+    icon = '🔑';
+    gradientClass = 'leak';
+    title = 'Data Leak Prevented';
+  } else if (typeLower.includes('download')) {
+    icon = '📥';
+    gradientClass = 'download';
+    title = 'Malicious Download Blocked';
+  } else if (typeLower.includes('fingerprint') || typeLower.includes('behavior')) {
+    icon = '👤';
+    gradientClass = 'behavior';
+    title = 'Fingerprint Attempt Spoofed';
+  } else if (typeLower.includes('script') || typeLower.includes('packet')) {
+    icon = '⚙️';
+    gradientClass = 'script';
+    title = 'Suspicious Script Audited';
+  }
+
   toastEl.innerHTML = `
-    <div class="__secext_toast_icon">🛡️</div>
+    <div class="__secext_toast_icon ${gradientClass}">${icon}</div>
     <div class="__secext_toast_body">
-      <div class="__secext_toast_title">Shield Active Protection</div>
-      <div class="__secext_toast_desc">Blocked: ${lastThreatType}</div>
+      <div class="__secext_toast_title">${title}</div>
+      <div class="__secext_toast_desc">${lastThreatType}</div>
     </div>
     <div class="__secext_toast_badge">${count}</div>
   `;
 
   if (toastTimeout) clearTimeout(toastTimeout);
 
+  // Trigger reflow to make transition work
   toastEl.getBoundingClientRect();
   toastEl.classList.add('show');
 
