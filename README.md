@@ -1,4 +1,4 @@
-# Shield Sandbox Firewall v2.4.3
+# Shield Sandbox Firewall v2.4.6
 
 A professional, high-performance Chrome security extension designed to perform deep packet inspection, prevent PII/secret exfiltration, override behavioral fingerprinting vectors, and block trackers natively using browser-level filtering rules.
 
@@ -62,7 +62,22 @@ Shield Sandbox Firewall operates across four execution environments to balance d
 
 ## 📅 Version History & Release Logs
 
-### v2.4.3 (Current) — Native System Notifications on Block
+### v2.4.6 (Current) — Native Notification Audit
+* **Clean Desktop Notification Tray**: Removed OS/system-level notifications (`chrome.notifications.create`) for DoubleClick tracker blocks, request firewalls, critical payload leaks, script debugger parses, remote update alarms, local reload requests, and reload success callbacks.
+* **In-App Notification Focus**: Relayed these alerts to webpage toasts (inside Chrome browser pages) and dashboard inline banners to prevent OS desktop clutter.
+* **Urgent Download Alerts**: Preserved native desktop notifications exclusively for **Suspicious Download Paused** events.
+
+### v2.4.5 — Real-time Sync & "All Active Tabs" Aggregated View
+* **Aggregated View**: Implemented the "All Active Tabs" option in the dropdown selector, combining metrics, sorting requests, averaging security scores, and prefixing findings with domain labels.
+* **Real-time Active Tab Sync**: Added listeners for tab updates and window focus transitions to keep the background's active tab state fully accurate.
+* **Immediate Visibility Refresh**: Added document `visibilitychange` hooks to immediately query and sync the dashboard when the tab gains focus.
+* **Persistent Auto-Follow Settings**: Saved the AUTO-FOLLOW checkbox choice locally.
+
+### v2.4.4 — Parallel Tab Tracking & Global Threat History Log
+* **Global History Log**: Implemented `addToGlobalLog()` to archive security events historically across all tabs.
+* **Inspecting Tab dropdown**: Integrated tab selectors to switch dashboard contexts in real-time.
+
+### v2.4.3 — Native System Notifications on Block
 * **Firewall Blocks System Notifications**: Intercepts blocked domains and displays a native Chrome push notification showing the threat categorization and blocked host.
 * **DoubleClick Disabled Notification**: Detects DoubleClick ad/analytics trackers and creates a dedicated system alert signifying when tracking has been disabled on the tab.
 * **Notification Anti-Spam Cache**: Built an in-memory decay buffer to prevent multiple simultaneous blocking events on a single page from spamming the system tray.

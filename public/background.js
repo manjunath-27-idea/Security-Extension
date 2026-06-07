@@ -662,22 +662,6 @@ function recordTracker(tabId, domain, tracker, sourceUrl) {
       timestamp: Date.now()
     };
   }
-
-  // Trigger system notification if DoubleClick is disabled/recorded for the first time
-  if (domain.includes('doubleclick')) {
-    const now = Date.now();
-    const lastNotified = recentlyNotifiedBlocks[domain] || 0;
-    if (now - lastNotified > 10000) {
-      recentlyNotifiedBlocks[domain] = now;
-      chrome.notifications?.create({
-        type: 'basic',
-        iconUrl: 'images/icon-48.png',
-        title: '🚫 DoubleClick Disabled',
-        message: 'DoubleClick tracker was detected and automatically disabled.',
-        priority: 1,
-      });
-    }
-  }
 }
 
 chrome.webRequest.onHeadersReceived.addListener(
@@ -775,30 +759,9 @@ chrome.webRequest.onBeforeRequest.addListener(
     });
     if (reqs.length > 100) reqs.shift();
 
-    // Trigger system notification on firewall block
+    // Log firewall block
     if (isBlockedDomain) {
       addToGlobalLog(details.tabId, details.url, 'Blocked Threat Domain', 'Malware Domain', domain, 'Blocked');
-      const now = Date.now();
-      const lastNotified = recentlyNotifiedBlocks[domain] || 0;
-      if (now - lastNotified > 10000) {
-        recentlyNotifiedBlocks[domain] = now;
-        
-        let title = '🛡️ Request Blocked';
-        let message = `Blocked connection to threat domain: ${domain}`;
-        
-        if (domain.includes('doubleclick')) {
-          title = '🚫 DoubleClick Disabled';
-          message = 'DoubleClick tracking request was intercepted and disabled.';
-        }
-
-        chrome.notifications?.create({
-          type: 'basic',
-          iconUrl: 'images/icon-48.png',
-          title: title,
-          message: message,
-          priority: 1,
-        });
-      }
     }
 
     saveStateAndNotify(details.tabId, threatType);
@@ -826,16 +789,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const actionStr = request.data.blocked ? 'Blocked' : 'Detected';
       addToGlobalLog(tabId, request.data.url, labels, hasCritical ? 'Critical Data Leak' : 'Sensitive Data Leak', getDomain(request.data.url), actionStr);
 
-      // Show notification for critical leaks
-      if (hasCritical) {
-        chrome.notifications?.create({
-          type: 'basic',
-          iconUrl: 'images/icon-48.png',
-          title: '🚨 Security Alert',
-          message: `Sensitive data detected in outgoing request to ${getDomain(request.data.url) || 'unknown'}`,
-          priority: 2,
-        });
-      }
+
       const type = request.data.blocked ? 'Payload Leak Sanitized' : 'Payload Leak Detected';
       saveStateAndNotify(tabId, type);
       sendResponse({ success: true });
@@ -1433,28 +1387,7 @@ if (chrome.declarativeNetRequest?.onRuleMatchedDebug) {
     });
     if (reqs.length > 100) reqs.shift();
 
-    // Trigger system notification on DNR block matching
-    const now = Date.now();
-    const lastNotified = recentlyNotifiedBlocks[domain] || 0;
-    if (now - lastNotified > 10000) {
-      recentlyNotifiedBlocks[domain] = now;
-      
-      let title = '🛡️ Native DNR Block';
-      let message = `${threatLabel} request blocked: ${domain}`;
 
-      if (domain.includes('doubleclick')) {
-        title = '🚫 DoubleClick Disabled';
-        message = 'DoubleClick tracking request was intercepted and disabled.';
-      }
-
-      chrome.notifications?.create({
-        type: 'basic',
-        iconUrl: 'images/icon-48.png',
-        title: title,
-        message: message,
-        priority: 1,
-      });
-    }
 
     saveStateAndNotify(tabId, typeMsg);
   });
@@ -1600,16 +1533,7 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
           const cleanScriptUrl = url.split('/').pop() || 'external script';
           saveStateAndNotify(tabId, `Suspicious Script (${cleanScriptUrl})`);
 
-          const hasCritical = findings.some(f => f.severity === 'critical');
-          if (hasCritical) {
-            chrome.notifications?.create({
-              type: 'basic',
-              iconUrl: 'images/icon-48.png',
-              title: '🛡️ Deep Packet Scan Alert',
-              message: `Suspicious code block in script: ${url.substring(0, 50)}...`,
-              priority: 1,
-            });
-          }
+
         }
       }
     });
@@ -1705,14 +1629,7 @@ function checkVersionUpdate() {
           url: 'https://github.com/manjunath-27-idea/Security-Extension'
         };
         
-        // Notify user about remote update
-        chrome.notifications?.create('shield-update-available', {
-          type: 'basic',
-          iconUrl: 'images/icon-48.png',
-          title: '🌟 Shield Update Available',
-          message: `Version ${remoteVersion} is available on GitHub. Pull from repository and restart.`,
-          priority: 1,
-        });
+
         
         saveState();
       } else {
@@ -1730,14 +1647,7 @@ function checkVersionUpdate() {
       if (localVersion && compareVersions(localVersion, runningVersion) > 0) {
         securityData.updateReadyToReload = { version: localVersion };
         
-        // Notify user to reload/restart the extension
-        chrome.notifications?.create('shield-update-ready-reload', {
-          type: 'basic',
-          iconUrl: 'images/icon-48.png',
-          title: '🔄 Restart Shield Firewall',
-          message: `Version ${localVersion} is updated on disk. Click here to reload and apply changes.`,
-          priority: 2,
-        });
+
         
         saveState();
       } else {
@@ -1754,16 +1664,7 @@ function reloadExtension() {
   });
 }
 
-// ─── Notification Interaction Listeners ──────────────────────────────────────
-if (chrome.notifications?.onClicked) {
-  chrome.notifications.onClicked.addListener((notificationId) => {
-    if (notificationId === 'shield-update-available') {
-      chrome.tabs.create({ url: 'https://github.com/manjunath-27-idea/Security-Extension' });
-    } else if (notificationId === 'shield-update-ready-reload') {
-      reloadExtension();
-    }
-  });
-}
+
 
 // ─── Initialize Threat Protection ────────────────────────────────────────────
 stateLoaded.then(() => {
@@ -1779,13 +1680,7 @@ stateLoaded.then(() => {
     if (result && result.justUpdated) {
       chrome.storage.local.remove('justUpdated', () => {
         const currentVer = chrome.runtime.getManifest().version;
-        chrome.notifications?.create('shield-update-success', {
-          type: 'basic',
-          iconUrl: 'images/icon-48.png',
-          title: '🎉 Shield Firewall Reloaded',
-          message: `Shield Sandbox Firewall successfully reloaded and running version ${currentVer}!`,
-          priority: 1,
-        });
+
         
         chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
       });
