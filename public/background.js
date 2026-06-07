@@ -17,6 +17,34 @@ if (chrome.storage?.session) {
 // ─── Notification Anti-Spam Cache ────────────────────────────────────────────
 const recentlyNotifiedBlocks = {};
 
+// ─── Dynamic Popup / Redirect Blocker State ───
+const tabUserIntents = {}; // tabId -> [{ host: string, timestamp: number }]
+const lastTabUrls = {};    // tabId -> string (last known URL for rollback)
+const WHITELISTED_DOMAINS = [
+  'google.com', 'accounts.google.com', 'googleapis.com', 'recaptcha.net', 'hcaptcha.com',
+  'facebook.com', 'm.facebook.com', 'twitter.com', 'x.com', 'github.com',
+  'apple.com', 'microsoft.com', 'live.com', 'paypal.com', 'stripe.com',
+  'okta.com', 'auth0.com', 'amazon.com', 'google-analytics.com'
+];
+
+function isDomainWhitelisted(domain) {
+  if (!domain) return true;
+  return WHITELISTED_DOMAINS.some(d => domain === d || domain.endsWith('.' + d));
+}
+
+function hasUserIntentForHost(tabId, targetHost) {
+  const intents = tabUserIntents[tabId];
+  if (!intents || intents.length === 0) return false;
+  
+  const now = Date.now();
+  // Clean up intents older than 5 seconds
+  tabUserIntents[tabId] = intents.filter(i => (now - i.timestamp) < 5000);
+  
+  return tabUserIntents[tabId].some(i => {
+    return targetHost === i.host || targetHost.endsWith('.' + i.host) || i.host.endsWith('.' + targetHost);
+  });
+}
+
 // ─── Serializable State Store ────────────────────────────────────────────────
 const securityData = {
   requests: {},       // tabId → [{...}]
@@ -571,6 +599,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
       try {
         const u = new URL(tab.url);
         if (u.protocol === 'http:' || u.protocol === 'https:') {
+          lastTabUrls[activeInfo.tabId] = tab.url;
           securityData.activeTab = activeInfo.tabId;
           chrome.storage.session.set({ activeTab: activeInfo.tabId });
           saveStateAndNotify(activeInfo.tabId);
@@ -775,6 +804,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // Handle async state loading before processing message actions
   stateLoaded.then(() => {
+    if (request.action === 'userIntentNavigate') {
+      if (!tabId) return;
+      if (!tabUserIntents[tabId]) {
+        tabUserIntents[tabId] = [];
+      }
+      tabUserIntents[tabId].push({
+        host: request.host,
+        timestamp: request.timestamp
+      });
+      if (tabUserIntents[tabId].length > 15) {
+        tabUserIntents[tabId].shift();
+      }
+      sendResponse({ success: true });
+      return;
+    }
+
     if (request.action === 'payloadAlert') {
       if (!tabId) return;
       if (!securityData.payloadAlerts[tabId]) {
@@ -1184,6 +1229,9 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   delete securityData.pageData[tabId];
   delete securityData.scriptScans[tabId];
   delete securityData.behavioralAlerts[tabId];
+  delete tabUserIntents[tabId];
+  delete lastTabUrls[tabId];
+  delete popupOpenerMap[tabId];
   detachDebugger(tabId);
   saveStateAndNotify(null);
 });
@@ -1476,8 +1524,93 @@ function detachAllDebuggers() {
   }
 }
 
+const popupOpenerMap = {}; // popupTabId -> openerTabId
+
+chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.id && tab.openerTabId) {
+    popupOpenerMap[tab.id] = tab.openerTabId;
+  }
+});
+
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   await stateLoaded;
+
+  // Intercept popup/redirect attempts on URL change
+  if (changeInfo.url && (changeInfo.url.startsWith('http:') || changeInfo.url.startsWith('https:'))) {
+    const newUrl = changeInfo.url;
+    let targetHost = '';
+    try { targetHost = new URL(newUrl).hostname; } catch (e) {}
+
+    const openerTabId = popupOpenerMap[tabId];
+    if (openerTabId) {
+      delete popupOpenerMap[tabId];
+      chrome.tabs.get(openerTabId, (openerTab) => {
+        if (chrome.runtime.lastError || !openerTab || !openerTab.url) return;
+        try {
+          const openerHost = new URL(openerTab.url).hostname;
+          const isExternal = targetHost && targetHost !== openerHost;
+
+          if (securityData.settings?.heuristicsEnabled && isExternal) {
+            const hasIntent = hasUserIntentForHost(openerTabId, targetHost);
+            const isWhitelisted = isDomainWhitelisted(targetHost);
+
+            if (!hasIntent && !isWhitelisted) {
+              console.warn('[Security Extension] Close unauthorized popup tab:', tabId, 'redirecting to:', newUrl);
+              chrome.tabs.remove(tabId, () => {
+                if (chrome.runtime.lastError) return;
+
+                if (!securityData.behavioralAlerts[openerTabId]) {
+                  securityData.behavioralAlerts[openerTabId] = [];
+                }
+                securityData.behavioralAlerts[openerTabId].push({
+                  type: 'Adware Popup Blocked',
+                  desc: `Blocked unauthorized popup window to external domain: ${targetHost}`,
+                  timestamp: Date.now()
+                });
+                addToGlobalLog(openerTabId, newUrl, `Popup Blocked: ${targetHost}`, 'Adware Prevention', targetHost, 'Closed Popup');
+                saveStateAndNotify(openerTabId, `Adware Popup Blocked (${targetHost})`);
+              });
+              return;
+            }
+          }
+        } catch (e) {}
+      });
+    } else {
+      const prevUrl = lastTabUrls[tabId];
+      if (prevUrl) {
+        try {
+          const prevHost = new URL(prevUrl).hostname;
+          const isExternal = targetHost && targetHost !== prevHost;
+
+          if (securityData.settings?.heuristicsEnabled && isExternal) {
+            const hasIntent = hasUserIntentForHost(tabId, targetHost);
+            const isWhitelisted = isDomainWhitelisted(targetHost);
+
+            if (!hasIntent && !isWhitelisted) {
+              console.warn('[Security Extension] Prevent location hijack on tab:', tabId, 'from', prevUrl, 'to', newUrl);
+              chrome.tabs.update(tabId, { url: prevUrl }, () => {
+                if (chrome.runtime.lastError) return;
+
+                if (!securityData.behavioralAlerts[tabId]) {
+                  securityData.behavioralAlerts[tabId] = [];
+                }
+                securityData.behavioralAlerts[tabId].push({
+                  type: 'Location Hijack Blocked',
+                  desc: `Blocked unauthorized location change to external domain: ${targetHost}`,
+                  timestamp: Date.now()
+                });
+                addToGlobalLog(tabId, newUrl, `Redirect Blocked: ${targetHost}`, 'Adware Prevention', targetHost, 'Restored Original Page');
+                saveStateAndNotify(tabId, `Redirect Blocked (${targetHost})`);
+              });
+              return; // Halt and do not save lastTabUrls
+            }
+          }
+        } catch (e) {}
+      }
+      lastTabUrls[tabId] = newUrl;
+    }
+  }
+
   if (changeInfo.status === 'loading') {
     if (securityData.settings.debuggerEnabled) {
       detachDebugger(tabId);

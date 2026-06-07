@@ -1,5 +1,5 @@
 /**
- * Security Extension - Redesigned Popup Script v2.4.7
+ * Security Extension - Redesigned Popup Script v2.5.0
  */
 
 let currentTabId = null;

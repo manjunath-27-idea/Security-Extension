@@ -1,4 +1,4 @@
-# Shield Sandbox Firewall v2.4.7
+# Shield Sandbox Firewall v2.5.0
 
 A professional, high-performance Chrome security extension designed to perform deep packet inspection, prevent PII/secret exfiltration, override behavioral fingerprinting vectors, and block trackers natively using browser-level filtering rules.
 
@@ -92,7 +92,13 @@ Shield Sandbox Firewall operates across four execution environments to balance d
 
 ## 📅 Version History & Release Logs
 
-### v2.4.7 (Current) — UI Styling & Clear Button Redesign
+### v2.5.0 (Current) — Popup & Redirect Blocker
+* **Dynamic Popup Tab Prevention**: Automatically intercepts `chrome.tabs.onCreated` and `chrome.tabs.onUpdated` in the background worker. Compares opening popup URLs against the parent tab's registered user-initiated click events. If no match is found, the unsolicited popup is automatically closed, and a warning is logged.
+* **Location Hijack Rollback**: Detects unauthorized current-tab redirects to external adware domains (like `xm.com`). Instantly rolls back the navigation to the previous page if the transition lacks verified user intent (click records) and the target is not whitelisted.
+* **Main-World window.open Overrides**: Patched `window.open` inside the page main-world context (`injector.js`) to reject window creation scripts that attempt to redirect or spawn popups to external hosts.
+* **OAuth & Payments Whitelisting**: Maintained a strict default whitelist of common payment gateways and single sign-on (SSO) authentication providers to guarantee seamless logins.
+
+### v2.4.7 — UI Styling & Clear Button Redesign
 * **Redesigned Clear Buttons**: Styled all "Clear" buttons (Dashboard header, Global Threat History, and Extension Popup logs) in cohesive red styling (`var(--red)`) across both dark and light modes.
 * **Inline Style Cleanup**: Refactored the inline color styles on the threat history clear button into centralized CSS rules.
 

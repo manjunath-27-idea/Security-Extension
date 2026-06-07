@@ -327,3 +327,20 @@ function showSecurityToast(count, lastThreatType) {
     toastEl.classList.remove('show');
   }, 5000);
 }
+
+// Capture anchor clicks and send userIntentNavigate message to background
+window.addEventListener('click', (e) => {
+  const anchor = e.target.closest('a');
+  if (anchor && anchor.href) {
+    try {
+      const clickedHost = new URL(anchor.href, window.location.href).hostname;
+      if (clickedHost && clickedHost !== window.location.hostname) {
+        chrome.runtime.sendMessage({
+          action: 'userIntentNavigate',
+          host: clickedHost,
+          timestamp: Date.now()
+        }).catch(() => {});
+      }
+    } catch (err) {}
+  }
+}, { capture: true, passive: true });

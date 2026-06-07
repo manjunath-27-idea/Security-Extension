@@ -29,6 +29,59 @@
     return (Date.now() - lastUserInteraction) < 2000;
   }
 
+  // ─── Whitelist and Popup Blocker Override ───
+  const WHITELISTED_DOMAINS = [
+    'google.com', 'accounts.google.com', 'googleapis.com', 'recaptcha.net', 'hcaptcha.com',
+    'facebook.com', 'm.facebook.com', 'twitter.com', 'x.com', 'github.com',
+    'apple.com', 'microsoft.com', 'live.com', 'paypal.com', 'stripe.com',
+    'okta.com', 'auth0.com', 'amazon.com', 'google-analytics.com'
+  ];
+
+  function isDomainWhitelisted(domain) {
+    if (!domain) return true;
+    return WHITELISTED_DOMAINS.some(d => domain === d || domain.endsWith('.' + d));
+  }
+
+  let lastClickedLinkHost = '';
+  window.addEventListener('click', (e) => {
+    lastUserInteraction = Date.now();
+    const anchor = e.target.closest('a');
+    if (anchor && anchor.href) {
+      try {
+        lastClickedLinkHost = new URL(anchor.href, window.location.href).hostname;
+      } catch (err) {
+        lastClickedLinkHost = '';
+      }
+    } else {
+      lastClickedLinkHost = '';
+    }
+  }, { capture: true, passive: true });
+
+  try {
+    const originalOpen = window.open;
+    window.open = function(url, name, specs) {
+      let targetHost = '';
+      try {
+        if (url) targetHost = new URL(url, window.location.href).hostname;
+      } catch (err) {}
+
+      const isExternal = targetHost && targetHost !== window.location.hostname;
+      if (extensionSettings.heuristicsEnabled && isExternal) {
+        const isLegitLink = lastClickedLinkHost === targetHost || (Date.now() - lastUserInteraction < 1500 && lastClickedLinkHost);
+        const isWhitelisted = isDomainWhitelisted(targetHost);
+
+        if (!isLegitLink && !isWhitelisted) {
+          reportBehavioralAlert('Popup Blocked', `Blocked popup window.open redirect to: ${targetHost}`);
+          console.warn('[Security Extension] Blocked unauthorized window.open redirect to:', url);
+          return null; // Cancel opening the popup
+        }
+      }
+      return originalOpen.call(this, url, name, specs);
+    };
+  } catch (e) {
+    console.warn('[Shield Heuristics] window.open override failed:', e);
+  }
+
   function reportBehavioralAlert(type, desc) {
     window.dispatchEvent(
       new CustomEvent('__secext_behavioral_alert', {
