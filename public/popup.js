@@ -28,6 +28,7 @@ if (themeToggleBtn) {
 
 // Initialize popup markup
 document.getElementById('content').innerHTML = `
+  <div id="updateBannerContainer"></div>
   <div class="score-card">
     <div class="circle-container">
       <svg>
@@ -170,6 +171,42 @@ function renderPopup(data) {
     findingEl.innerHTML = `<span>${topFinding.title}</span>`;
   } else {
     findingEl.style.display = 'none';
+  }
+
+  // Update/Reload Banners
+  const bannerContainer = document.getElementById('updateBannerContainer');
+  if (bannerContainer) {
+    if (data.updateReadyToReload) {
+      bannerContainer.innerHTML = `
+        <div class="update-banner ready-reload">
+          <div class="banner-title">🔄 Restart Required (v${data.updateReadyToReload.version})</div>
+          <div class="banner-body">Extension files updated on disk. Click below to reload and apply.</div>
+          <button class="btn btn-primary btn-sm" id="btnReloadExt" style="margin-top: 6px;">Restart Firewall</button>
+        </div>
+      `;
+      document.getElementById('btnReloadExt').addEventListener('click', () => {
+        chrome.runtime.sendMessage({ action: 'reloadExtension' });
+      });
+    } else if (data.updateAvailable) {
+      bannerContainer.innerHTML = `
+        <div class="update-banner">
+          <div class="banner-title">🌟 Update Available (v${data.updateAvailable.version})</div>
+          <div class="banner-body">A new version is available on GitHub. Pull the latest files to update.</div>
+          <div class="banner-actions">
+            <button class="btn btn-primary btn-sm" id="btnOpenRepo">Open GitHub</button>
+            <button class="btn btn-ghost btn-sm" id="btnReloadExt">Reload</button>
+          </div>
+        </div>
+      `;
+      document.getElementById('btnOpenRepo').addEventListener('click', () => {
+        chrome.tabs.create({ url: data.updateAvailable.url || 'https://github.com/manjunath-27-idea/Security-Extension' });
+      });
+      document.getElementById('btnReloadExt').addEventListener('click', () => {
+        chrome.runtime.sendMessage({ action: 'reloadExtension' });
+      });
+    } else {
+      bannerContainer.innerHTML = '';
+    }
   }
 
   // Setup Event Listeners

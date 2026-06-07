@@ -58,12 +58,29 @@ document.addEventListener('DOMContentLoaded', () => {
   setupLocalBlocklistInput();
   setupTheme();
 
+  const dropdown = document.getElementById('activeTabsDropdown');
+  if (dropdown) {
+    dropdown.addEventListener('change', (e) => {
+      const selectedTabId = parseInt(e.target.value, 10);
+      if (selectedTabId && selectedTabId !== currentTabId) {
+        initDashboardForTab(selectedTabId);
+      }
+    });
+  }
+
+  const btnClearGlobal = document.getElementById('btnClearGlobalHistory');
+  if (btnClearGlobal) {
+    btnClearGlobal.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'clearGlobalHistory' }, () => {
+        loadDashboard();
+      });
+    });
+  }
+
   // Listen for real-time updates from background worker
   chrome.runtime.onMessage.addListener((request) => {
     if (request.action === 'securityDataUpdated') {
-      if (request.tabId === currentTabId) {
-        loadDashboard();
-      }
+      loadDashboard();
     }
   });
 
@@ -127,8 +144,11 @@ function loadDashboard() {
 }
 
 function renderAll(data) {
+  renderUpdateBanner(data);
+  renderActiveTabsDropdown(data.activeTabsList || [], data.tabId);
   renderOverview(data);
   renderAudit(data.audit);
+  renderGlobalHistory(data.globalThreatLog || []);
   renderPayloadAlerts(data.payloadAlerts || []);
   renderTraffic(data.requests || []);
   renderHeaders(data.headers || []);
@@ -136,6 +156,135 @@ function renderAll(data) {
   renderScriptScans(data.scriptScans || []);
   renderBehavioralAlerts(data.behavioralAlerts || []);
   renderLocalBlocklist(data.localBlockedDomains || [], data.blockedDomainsMetadata || {});
+}
+
+function renderUpdateBanner(data) {
+  const container = document.getElementById('updateBannerContainer');
+  if (!container) return;
+
+  if (data.updateReadyToReload) {
+    container.innerHTML = `
+      <div class="update-banner ready-reload">
+        <div class="banner-text">
+          <div class="banner-title">🔄 Restart Required (v${data.updateReadyToReload.version})</div>
+          <div class="banner-body">Extension files have been updated on disk. Reload now to apply updates.</div>
+        </div>
+        <div class="banner-actions">
+          <button class="btn btn-primary" id="btnReloadExt">Restart Firewall</button>
+        </div>
+      </div>
+    `;
+    document.getElementById('btnReloadExt').addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'reloadExtension' });
+    });
+  } else if (data.updateAvailable) {
+    container.innerHTML = `
+      <div class="update-banner">
+        <div class="banner-text">
+          <div class="banner-title">🌟 Update Available (v${data.updateAvailable.version})</div>
+          <div class="banner-body">A new release is available on GitHub. Pull the latest repository files to update.</div>
+        </div>
+        <div class="banner-actions">
+          <button class="btn btn-primary" id="btnOpenRepo" style="border: none;">Open GitHub</button>
+          <button class="btn btn-ghost" id="btnReloadExt">Reload</button>
+        </div>
+      </div>
+    `;
+    document.getElementById('btnOpenRepo').addEventListener('click', () => {
+      window.open(data.updateAvailable.url || 'https://github.com/manjunath-27-idea/Security-Extension', '_blank');
+    });
+    document.getElementById('btnReloadExt').addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'reloadExtension' });
+    });
+  } else {
+    container.innerHTML = '';
+  }
+}
+
+function renderActiveTabsDropdown(activeTabs, selectedTabId) {
+  const dropdown = document.getElementById('activeTabsDropdown');
+  if (!dropdown) return;
+
+  dropdown.innerHTML = activeTabs.map(tab => {
+    const isSel = tab.id === selectedTabId ? 'selected' : '';
+    const cleanTitle = tab.title.substring(0, 30);
+    const countBadge = tab.threatCount > 0 ? ` (${tab.threatCount})` : '';
+    return `<option value="${tab.id}" ${isSel}>${escHtml(cleanTitle)}${countBadge}</option>`;
+  }).join('');
+}
+
+function renderGlobalHistory(historyLog) {
+  const container = document.getElementById('globalHistoryContent');
+  if (!container) return;
+
+  if (historyLog.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div>No global events captured yet</div>
+        <div style="font-size:11px;margin-top:6px;color:var(--muted)">All blocked trackers, insecure requests, leaks, and spoofed fingerprints will be archived here.</div>
+      </div>
+    `;
+    return;
+  }
+
+  const tableHTML = `
+    <table class="data-table" style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+      <thead>
+        <tr style="border-bottom: 2px solid var(--border); text-align: left; font-size: 12px; color: var(--muted);">
+          <th style="padding: 12px 16px;">Timestamp</th>
+          <th style="padding: 12px 16px;">Origin / Domain</th>
+          <th style="padding: 12px 16px;">Threat Detected</th>
+          <th style="padding: 12px 16px;">Category</th>
+          <th style="padding: 12px 16px;">Details</th>
+          <th style="padding: 12px 16px; text-align: right;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${historyLog.slice().reverse().map(item => {
+          const time = formatTime(item.timestamp);
+          const date = new Date(item.timestamp).toLocaleDateString();
+          let catClass = 'medium';
+          if (item.category.toLowerCase().includes('critical') || item.category.toLowerCase().includes('malware')) {
+            catClass = 'critical';
+          } else if (item.category.toLowerCase().includes('insecure') || item.category.toLowerCase().includes('leak')) {
+            catClass = 'high';
+          } else if (item.category.toLowerCase().includes('behavior') || item.category.toLowerCase().includes('tracker')) {
+            catClass = 'alerts';
+          }
+
+          let actionClass = 'warned-badge';
+          if (item.action.toLowerCase() === 'blocked' || item.action.toLowerCase() === 'poisoned') {
+            actionClass = 'blocked-badge';
+          }
+
+          return `
+            <tr style="border-bottom: 1px solid var(--border); font-size: 13px;">
+              <td style="padding: 12px 16px; color: var(--muted); font-size: 11px;" title="${date}">
+                ${time}
+              </td>
+              <td style="padding: 12px 16px; color: var(--text); font-weight: 600;">
+                ${escHtml(item.domain)}
+              </td>
+              <td style="padding: 12px 16px; color: var(--text);">
+                ${escHtml(item.label)}
+              </td>
+              <td style="padding: 12px 16px;">
+                <span class="sev-badge ${catClass}">${escHtml(item.category)}</span>
+              </td>
+              <td style="padding: 12px 16px; color: var(--muted); font-family: var(--mono); font-size: 11px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escHtml(item.url)}">
+                ${escHtml(item.url)}
+              </td>
+              <td style="padding: 12px 16px; text-align: right;">
+                <span class="${actionClass}">${escHtml(item.action.toUpperCase())}</span>
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+
+  container.innerHTML = tableHTML;
 }
 
 // ─── Overview ─────────────────────────────────────────────────────────────────

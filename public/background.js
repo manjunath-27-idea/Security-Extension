@@ -1,5 +1,5 @@
 /**
- * Security Extension - Background Service Worker v2.4.3
+ * Security Extension - Background Service Worker v2.4.4
  * 
  * Persistent & Robust for Manifest V3:
  *  - Persists state in chrome.storage.session to survive Service Worker idle terminations.
@@ -103,6 +103,9 @@ const stateLoaded = new Promise((resolve) => {
         }
         if (!securityData.blockedDomainsMetadata) {
           securityData.blockedDomainsMetadata = {};
+        }
+        if (!securityData.globalThreatLog) {
+          securityData.globalThreatLog = [];
         }
       }
       resolve();
@@ -617,6 +620,8 @@ function recordTracker(tabId, domain, tracker, sourceUrl) {
   }
   trackers[domain].requests++;
 
+  addToGlobalLog(tabId, resolvedSource, `Tracker: ${tracker.name}`, 'Tracker', domain, 'Blocked');
+
   // Automatically auto-block this tracker for future visits by saving it locally
   if (!securityData.localBlockedDomains) {
     securityData.localBlockedDomains = [];
@@ -692,6 +697,17 @@ chrome.webRequest.onBeforeRequest.addListener(
   async (details) => {
     await stateLoaded;
     if (details.tabId === -1) return;
+    
+    if (details.type === 'main_frame') {
+      delete securityData.requests[details.tabId];
+      delete securityData.headers[details.tabId];
+      delete securityData.trackers[details.tabId];
+      delete securityData.payloadAlerts[details.tabId];
+      delete securityData.pageData[details.tabId];
+      delete securityData.scriptScans[details.tabId];
+      delete securityData.behavioralAlerts[details.tabId];
+    }
+
     const domain = getDomain(details.url);
     if (!domain) return;
 
@@ -717,6 +733,7 @@ chrome.webRequest.onBeforeRequest.addListener(
         threatType = `Tracker (${tracker.name})`;
       } else if (!isSecure) {
         threatType = `Insecure HTTP (${domain})`;
+        addToGlobalLog(details.tabId, details.url, 'Unencrypted HTTP Connection', 'Insecure Connection', domain, 'Warned');
       }
     }
 
@@ -741,6 +758,7 @@ chrome.webRequest.onBeforeRequest.addListener(
 
     // Trigger system notification on firewall block
     if (isBlockedDomain) {
+      addToGlobalLog(details.tabId, details.url, 'Blocked Threat Domain', 'Malware Domain', domain, 'Blocked');
       const now = Date.now();
       const lastNotified = recentlyNotifiedBlocks[domain] || 0;
       if (now - lastNotified > 10000) {
@@ -784,8 +802,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       alerts.push(request.data);
       if (alerts.length > 200) alerts.shift();
 
-      // Show notification for critical leaks
       const hasCritical = request.data.findings?.some(f => f.severity === 'critical');
+      const labels = request.data.findings?.map(f => f.label).join(', ') || 'Sensitive Leak';
+      const actionStr = request.data.blocked ? 'Blocked' : 'Detected';
+      addToGlobalLog(tabId, request.data.url, labels, hasCritical ? 'Critical Data Leak' : 'Sensitive Data Leak', getDomain(request.data.url), actionStr);
+
+      // Show notification for critical leaks
       if (hasCritical) {
         chrome.notifications?.create({
           type: 'basic',
@@ -819,104 +841,122 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         targetTabId = sender.tab.id;
       }
 
-      const getResponse = (tid, isSystemPage = false) => {
-        const requests = securityData.requests[tid] || [];
-        const headersMap = securityData.headers[tid] || {};
-        const trackers = securityData.trackers[tid] || {};
-        const payloadAlerts = securityData.payloadAlerts[tid] || [];
-
-        const flatHeaders = [];
-        Object.entries(headersMap).forEach(([domain, dh]) => {
-          Object.values(dh).forEach(h => {
-            flatHeaders.push({ ...h, domain });
-          });
+      chrome.tabs.query({}, (tabs) => {
+        const activeTabsList = tabs.map(t => {
+          const tabId = t.id;
+          return {
+            id: tabId,
+            title: t.title || 'Untitled',
+            url: t.url || '',
+            favIconUrl: t.favIconUrl || '',
+            threatCount: getTabThreatCount(tabId),
+            isActive: tabId === securityData.activeTab
+          };
         });
 
-        let audit = generateAudit(tid);
+        const getResponse = (tid, isSystemPage = false) => {
+          const requests = securityData.requests[tid] || [];
+          const headersMap = securityData.headers[tid] || {};
+          const trackers = securityData.trackers[tid] || {};
+          const payloadAlerts = securityData.payloadAlerts[tid] || [];
 
-        if (isSystemPage) {
-          audit = {
-            score: 100,
-            grade: 'A',
-            findings: [],
-            suggestions: [],
-            stats: {
-              totalRequests: 0,
-              secureRequests: 0,
-              httpRequests: 0,
-              blockedRequests: 0,
-              payloadAlerts: 0,
-              trackersDetected: 0,
-              headersPresent: 0,
-              headersMissing: 0,
-            },
-            isSystemPage: true,
-          };
-        }
+          const flatHeaders = [];
+          Object.entries(headersMap).forEach(([domain, dh]) => {
+            Object.values(dh).forEach(h => {
+              flatHeaders.push({ ...h, domain });
+            });
+          });
 
-        // Determine active site domain for default fallback headers
-        let defaultDomain = 'Active Tab';
-        if (requests.length > 0) {
-          defaultDomain = requests[0].domain || 'Active Tab';
-        }
-        const finalHeaders = flatHeaders.length > 0 
-          ? flatHeaders 
-          : (isSystemPage ? [] : getDefaultHeaders().map(h => ({ ...h, domain: defaultDomain })));
+          let audit = generateAudit(tid);
 
-        return {
-          requests: isSystemPage ? [] : requests,
-          headers: finalHeaders,
-          trackers: isSystemPage ? [] : Object.values(trackers),
-          payloadAlerts: isSystemPage ? [] : payloadAlerts,
-          scriptScans: isSystemPage ? [] : (securityData.scriptScans[tid] || []),
-          behavioralAlerts: isSystemPage ? [] : (securityData.behavioralAlerts[tid] || []),
-          localBlockedDomains: securityData.localBlockedDomains || [],
-          blockedDomainsMetadata: securityData.blockedDomainsMetadata || {},
-          audit,
-          tabId: tid,
-        };
-      };
-
-      if (targetTabId && targetTabId !== -1) {
-        chrome.tabs.get(targetTabId, (tab) => {
-          if (chrome.runtime.lastError || !tab) {
-            sendResponse(getResponse(targetTabId, false));
-            return;
+          if (isSystemPage) {
+            audit = {
+              score: 100,
+              grade: 'A',
+              findings: [],
+              suggestions: [],
+              stats: {
+                totalRequests: 0,
+                secureRequests: 0,
+                httpRequests: 0,
+                blockedRequests: 0,
+                payloadAlerts: 0,
+                trackersDetected: 0,
+                headersPresent: 0,
+                headersMissing: 0,
+              },
+              isSystemPage: true,
+            };
           }
-          let isSystem = false;
-          if (tab.url) {
-            try {
-              const u = new URL(tab.url);
-              if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+
+          // Determine active site domain for default fallback headers
+          let defaultDomain = 'Active Tab';
+          if (requests.length > 0) {
+            defaultDomain = requests[0].domain || 'Active Tab';
+          }
+          const finalHeaders = flatHeaders.length > 0 
+            ? flatHeaders 
+            : (isSystemPage ? [] : getDefaultHeaders().map(h => ({ ...h, domain: defaultDomain })));
+
+          return {
+            requests: isSystemPage ? [] : requests,
+            headers: finalHeaders,
+            trackers: isSystemPage ? [] : Object.values(trackers),
+            payloadAlerts: isSystemPage ? [] : payloadAlerts,
+            scriptScans: isSystemPage ? [] : (securityData.scriptScans[tid] || []),
+            behavioralAlerts: isSystemPage ? [] : (securityData.behavioralAlerts[tid] || []),
+            localBlockedDomains: securityData.localBlockedDomains || [],
+            blockedDomainsMetadata: securityData.blockedDomainsMetadata || {},
+            updateAvailable: securityData.updateAvailable || null,
+            updateReadyToReload: securityData.updateReadyToReload || null,
+            globalThreatLog: securityData.globalThreatLog || [],
+            activeTabsList: activeTabsList,
+            audit,
+            tabId: tid,
+          };
+        };
+
+        if (targetTabId && targetTabId !== -1) {
+          chrome.tabs.get(targetTabId, (tab) => {
+            if (chrome.runtime.lastError || !tab) {
+              sendResponse(getResponse(targetTabId, false));
+              return;
+            }
+            let isSystem = false;
+            if (tab.url) {
+              try {
+                const u = new URL(tab.url);
+                if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+                  isSystem = true;
+                }
+              } catch {
                 isSystem = true;
               }
-            } catch {
-              isSystem = true;
             }
-          }
-          
-          // If it is a system/extension page and the caller did not specify a tabId,
-          // check if we can fall back to the last active web tab
-          if (isSystem && !request.tabId && securityData.activeTab && securityData.activeTab !== targetTabId) {
-            chrome.tabs.get(securityData.activeTab, (activeTab) => {
-              if (!chrome.runtime.lastError && activeTab && activeTab.url) {
-                try {
-                  const au = new URL(activeTab.url);
-                  if (au.protocol === 'http:' || au.protocol === 'https:') {
-                    sendResponse(getResponse(securityData.activeTab, false));
-                    return;
-                  }
-                } catch {}
-              }
+            
+            // If it is a system/extension page and the caller did not specify a tabId,
+            // check if we can fall back to the last active web tab
+            if (isSystem && !request.tabId && securityData.activeTab && securityData.activeTab !== targetTabId) {
+              chrome.tabs.get(securityData.activeTab, (activeTab) => {
+                if (!chrome.runtime.lastError && activeTab && activeTab.url) {
+                  try {
+                    const au = new URL(activeTab.url);
+                    if (au.protocol === 'http:' || au.protocol === 'https:') {
+                      sendResponse(getResponse(securityData.activeTab, false));
+                      return;
+                    }
+                  } catch {}
+                }
+                sendResponse(getResponse(targetTabId, isSystem));
+              });
+            } else {
               sendResponse(getResponse(targetTabId, isSystem));
-            });
-          } else {
-            sendResponse(getResponse(targetTabId, isSystem));
-          }
-        });
-      } else {
-        sendResponse(getResponse(targetTabId, false));
-      }
+            }
+          });
+        } else {
+          sendResponse(getResponse(targetTabId, false));
+        }
+      });
       return;
     }
 
@@ -962,6 +1002,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const alerts = securityData.behavioralAlerts[tabId];
       alerts.push(request.data);
       if (alerts.length > 100) alerts.shift();
+      
+      const pgUrl = sender?.tab?.url || 'Active Page';
+      let pgHost = 'Active Page';
+      try { pgHost = new URL(pgUrl).hostname; } catch(e) {}
+      addToGlobalLog(tabId, pgUrl, request.data.type || 'Behavioral Fingerprint', 'Behavioral Threat', pgHost, 'Poisoned/Mitigated');
+
       const type = request.data.type || 'Behavioral Threat Poisoned';
       saveStateAndNotify(tabId, type);
       sendResponse({ success: true });
@@ -1017,6 +1063,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       saveStateAndNotify(tabId);
       setupDeclarativeRules();
       sendResponse({ success: true, localBlockedDomains: securityData.localBlockedDomains });
+      return;
+    }
+
+    if (request.action === 'reloadExtension') {
+      reloadExtension();
+      sendResponse({ success: true });
+      return;
+    }
+
+    if (request.action === 'clearGlobalHistory') {
+      securityData.globalThreatLog = [];
+      saveStateAndNotify(null);
+      sendResponse({ success: true });
       return;
     }
   });
@@ -1094,6 +1153,7 @@ if (chrome.downloads) {
           // Find the active tab to display the page-level toast notification and save state
           chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             const activeTabId = tabs[0]?.id || null;
+            addToGlobalLog(activeTabId, url, `Suspicious File: ${cleanName}`, 'Suspicious Download', getDomain(url), 'Paused');
             chrome.notifications?.create({
               type: 'basic',
               iconUrl: 'images/icon-48.png',
@@ -1196,6 +1256,8 @@ if (chrome.declarativeNetRequest?.onRuleMatchedDebug) {
     };
     const threatLabel = DNR_THREAT_LABELS[domain] || 'Malicious Threat';
     const typeMsg = `${threatLabel} (${domain})`;
+
+    addToGlobalLog(tabId, info.request.url, `DNR Blocked: ${threatLabel}`, 'Malware Domain', domain, 'Blocked');
 
     if (!securityData.trackers[tabId]) {
       securityData.trackers[tabId] = {};
@@ -1380,6 +1442,9 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
           });
           if (scans.length > 50) scans.shift();
           
+          const labels = findings.map(f => f.label).join(', ') || 'Suspicious Code';
+          addToGlobalLog(tabId, url, labels, 'Script Vulnerability', getDomain(url), 'Audited');
+          
           // Notify active tab via saveStateAndNotify
           const cleanScriptUrl = url.split('/').pop() || 'external script';
           saveStateAndNotify(tabId, `Suspicious Script (${cleanScriptUrl})`);
@@ -1442,6 +1507,113 @@ function analyzeScriptCode(code) {
   return findings;
 }
 
+function addToGlobalLog(tabId, url, label, category, domain, action) {
+  if (!securityData.globalThreatLog) {
+    securityData.globalThreatLog = [];
+  }
+  const entry = {
+    id: `threat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    timestamp: new Date().toISOString(),
+    tabId: tabId || null,
+    url: url || 'N/A',
+    label: label || 'Unknown Threat',
+    category: category || 'General',
+    domain: domain || 'Unknown Domain',
+    action: action || 'Alerted'
+  };
+  securityData.globalThreatLog.push(entry);
+  if (securityData.globalThreatLog.length > 500) {
+    securityData.globalThreatLog.shift();
+  }
+}
+
+// ─── Git Version Checker & Extension Reload Helpers ──────────────────────────
+function compareVersions(v1, v2) {
+  const p1 = v1.split('.').map(Number);
+  const p2 = v2.split('.').map(Number);
+  for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
+    const n1 = p1[i] || 0;
+    const n2 = p2[i] || 0;
+    if (n1 > n2) return 1;
+    if (n1 < n2) return -1;
+  }
+  return 0;
+}
+
+function checkVersionUpdate() {
+  const runningVersion = chrome.runtime.getManifest().version;
+
+  // 1. Fetch remote manifest from raw GitHub
+  fetch('https://raw.githubusercontent.com/manjunath-27-idea/Security-Extension/master/public/manifest.json')
+    .then(r => r.json())
+    .then(data => {
+      const remoteVersion = data.version;
+      if (remoteVersion && compareVersions(remoteVersion, runningVersion) > 0) {
+        securityData.updateAvailable = {
+          version: remoteVersion,
+          url: 'https://github.com/manjunath-27-idea/Security-Extension'
+        };
+        
+        // Notify user about remote update
+        chrome.notifications?.create('shield-update-available', {
+          type: 'basic',
+          iconUrl: 'images/icon-48.png',
+          title: '🌟 Shield Update Available',
+          message: `Version ${remoteVersion} is available on GitHub. Pull from repository and restart.`,
+          priority: 1,
+        });
+        
+        saveState();
+      } else {
+        delete securityData.updateAvailable;
+        saveState();
+      }
+    })
+    .catch(err => console.log('[Shield Update] Remote check failed:', err));
+
+  // 2. Fetch local manifest from disk to see if it has been updated already
+  fetch(chrome.runtime.getURL('manifest.json'))
+    .then(r => r.json())
+    .then(data => {
+      const localVersion = data.version;
+      if (localVersion && compareVersions(localVersion, runningVersion) > 0) {
+        securityData.updateReadyToReload = { version: localVersion };
+        
+        // Notify user to reload/restart the extension
+        chrome.notifications?.create('shield-update-ready-reload', {
+          type: 'basic',
+          iconUrl: 'images/icon-48.png',
+          title: '🔄 Restart Shield Firewall',
+          message: `Version ${localVersion} is updated on disk. Click here to reload and apply changes.`,
+          priority: 2,
+        });
+        
+        saveState();
+      } else {
+        delete securityData.updateReadyToReload;
+        saveState();
+      }
+    })
+    .catch(err => console.log('[Shield Update] Local disk check failed:', err));
+}
+
+function reloadExtension() {
+  chrome.storage.local.set({ justUpdated: true }, () => {
+    chrome.runtime.reload();
+  });
+}
+
+// ─── Notification Interaction Listeners ──────────────────────────────────────
+if (chrome.notifications?.onClicked) {
+  chrome.notifications.onClicked.addListener((notificationId) => {
+    if (notificationId === 'shield-update-available') {
+      chrome.tabs.create({ url: 'https://github.com/manjunath-27-idea/Security-Extension' });
+    } else if (notificationId === 'shield-update-ready-reload') {
+      reloadExtension();
+    }
+  });
+}
+
 // ─── Initialize Threat Protection ────────────────────────────────────────────
 stateLoaded.then(() => {
   setupDeclarativeRules();
@@ -1450,4 +1622,38 @@ stateLoaded.then(() => {
       if (tabs[0]) attachDebugger(tabs[0].id);
     });
   }
+
+  // Check reload flag and notify on reload startup
+  chrome.storage.local.get(['justUpdated'], (result) => {
+    if (result && result.justUpdated) {
+      chrome.storage.local.remove('justUpdated', () => {
+        const currentVer = chrome.runtime.getManifest().version;
+        chrome.notifications?.create('shield-update-success', {
+          type: 'basic',
+          iconUrl: 'images/icon-48.png',
+          title: '🎉 Shield Firewall Reloaded',
+          message: `Shield Sandbox Firewall successfully reloaded and running version ${currentVer}!`,
+          priority: 1,
+        });
+        
+        chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+      });
+    }
+  });
+
+  // Run update checks
+  checkVersionUpdate();
+
+  // Schedule alarm check every 30 minutes
+  if (chrome.alarms) {
+    chrome.alarms.create('check-git-version', { periodInMinutes: 30 });
+  }
 });
+
+if (chrome.alarms) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'check-git-version') {
+      checkVersionUpdate();
+    }
+  });
+}
