@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     currentTabId = tabId;
     
     // Query tab details to get hostname
-    if (currentTabId) {
+    if (currentTabId && currentTabId !== 'all') {
       chrome.tabs.get(currentTabId, (tab) => {
         if (!chrome.runtime.lastError && tab && tab.url) {
           const currentSiteEl = document.getElementById('currentSite');
@@ -27,6 +27,11 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
       });
+    } else if (currentTabId === 'all') {
+      const currentSiteEl = document.getElementById('currentSite');
+      if (currentSiteEl) {
+        currentSiteEl.textContent = 'All Active Websites';
+      }
     }
     loadDashboard();
   };
@@ -59,14 +64,55 @@ document.addEventListener('DOMContentLoaded', () => {
   setupTheme();
 
   const dropdown = document.getElementById('activeTabsDropdown');
-  if (dropdown) {
-    dropdown.addEventListener('change', (e) => {
-      const selectedTabId = parseInt(e.target.value, 10);
-      if (selectedTabId && selectedTabId !== currentTabId) {
-        initDashboardForTab(selectedTabId);
+  const autoFollowCb = document.getElementById('autoFollowCheckbox');
+
+  // Load persistent Auto-Follow setting
+  if (autoFollowCb) {
+    chrome.storage.local.get(['autoFollowActive'], (result) => {
+      const active = result.autoFollowActive !== false; // Default to true
+      autoFollowCb.checked = active;
+      if (active) {
+        loadDashboard();
+      }
+    });
+
+    autoFollowCb.addEventListener('change', () => {
+      chrome.storage.local.set({ autoFollowActive: autoFollowCb.checked });
+      if (autoFollowCb.checked) {
+        loadDashboard(); // Will trigger auto-follow sync
       }
     });
   }
+
+  if (dropdown) {
+    dropdown.addEventListener('change', (e) => {
+      const selectedValue = e.target.value;
+      if (selectedValue === 'all') {
+        if (autoFollowCb) {
+          autoFollowCb.checked = false;
+          chrome.storage.local.set({ autoFollowActive: false });
+        }
+        currentTabId = 'all';
+        initDashboardForTab('all');
+      } else {
+        const selectedTabId = parseInt(selectedValue, 10);
+        if (selectedTabId && selectedTabId !== currentTabId) {
+          if (autoFollowCb) {
+            autoFollowCb.checked = false;
+            chrome.storage.local.set({ autoFollowActive: false });
+          }
+          initDashboardForTab(selectedTabId);
+        }
+      }
+    });
+  }
+
+  // Handle visibility changes to refresh stats immediately
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      loadDashboard();
+    }
+  });
 
   const btnClearGlobal = document.getElementById('btnClearGlobalHistory');
   if (btnClearGlobal) {
@@ -143,8 +189,29 @@ function loadDashboard() {
       return tab.url.startsWith('http:') || tab.url.startsWith('https:');
     });
 
-    // If currentTabId is not a web tab, fall back to the active web tab or first website
-    const isWebTab = (tid) => webTabs.some(t => t.id === tid);
+    // Check if Auto-Follow is active
+    const autoFollowCb = document.getElementById('autoFollowCheckbox');
+    if (autoFollowCb && autoFollowCb.checked) {
+      const activeWebTab = webTabs.find(t => t.isActive);
+      if (activeWebTab && activeWebTab.id !== currentTabId) {
+        currentTabId = activeWebTab.id;
+        // Reload data for the new auto-followed web tab
+        chrome.runtime.sendMessage({ action: 'getSecurityData', tabId: currentTabId }, (newResponse) => {
+          if (!chrome.runtime.lastError && newResponse) {
+            lastLoadedData = newResponse;
+            const newWebTabs = (newResponse.activeTabsList || []).filter(tab => {
+              return tab.url.startsWith('http:') || tab.url.startsWith('https:');
+            });
+            renderAll({ ...newResponse, activeTabsList: newWebTabs });
+            updateLastUpdate();
+          }
+        });
+        return;
+      }
+    }
+
+    // If currentTabId is not a web tab (e.g. closed or system page), and is not 'all', fall back
+    const isWebTab = (tid) => tid === 'all' || webTabs.some(t => t.id === tid);
     if (!isWebTab(currentTabId)) {
       const activeWebTab = webTabs.find(t => t.isActive) || webTabs[0];
       if (activeWebTab) {
@@ -232,12 +299,17 @@ function renderActiveTabsDropdown(activeTabs, selectedTabId) {
   const dropdown = document.getElementById('activeTabsDropdown');
   if (!dropdown) return;
 
-  dropdown.innerHTML = activeTabs.map(tab => {
+  const allSelected = selectedTabId === 'all' ? 'selected' : '';
+  let optionsHTML = `<option value="all" ${allSelected}>All Active Tabs</option>`;
+
+  optionsHTML += activeTabs.map(tab => {
     const isSel = tab.id === selectedTabId ? 'selected' : '';
     const cleanTitle = tab.title.substring(0, 30);
     const countBadge = tab.threatCount > 0 ? ` (${tab.threatCount})` : '';
     return `<option value="${tab.id}" ${isSel}>${escHtml(cleanTitle)}${countBadge}</option>`;
   }).join('');
+
+  dropdown.innerHTML = optionsHTML;
 }
 
 function renderGlobalHistory(historyLog) {

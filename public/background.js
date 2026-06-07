@@ -573,10 +573,29 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
         if (u.protocol === 'http:' || u.protocol === 'https:') {
           securityData.activeTab = activeInfo.tabId;
           chrome.storage.session.set({ activeTab: activeInfo.tabId });
-          saveState();
+          saveStateAndNotify(activeInfo.tabId);
         }
       } catch {}
     }
+  });
+});
+
+chrome.windows.onFocusChanged.addListener(async (windowId) => {
+  await stateLoaded;
+  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  chrome.tabs.query({ active: true, windowId: windowId }, (tabs) => {
+    const tab = tabs[0];
+    if (!tab || !tab.url) return;
+    try {
+      const u = new URL(tab.url);
+      if (u.protocol === 'http:' || u.protocol === 'https:') {
+        if (securityData.activeTab !== tab.id) {
+          securityData.activeTab = tab.id;
+          chrome.storage.session.set({ activeTab: tab.id });
+          saveStateAndNotify(tab.id);
+        }
+      }
+    } catch {}
   });
 });
 
@@ -853,6 +872,124 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             isActive: tabId === securityData.activeTab
           };
         });
+
+        // Filter activeTabsList to web tabs
+        const webTabs = activeTabsList.filter(tab => {
+          return tab.url.startsWith('http:') || tab.url.startsWith('https:');
+        });
+        const webTabIds = webTabs.map(t => t.id);
+
+        if (targetTabId === 'all') {
+          let allRequests = [];
+          let allHeadersMap = {};
+          let allTrackers = {};
+          let allPayloadAlerts = [];
+          let allScriptScans = [];
+          let allBehavioralAlerts = [];
+          let totalScore = 0;
+          let activeWebTabCount = 0;
+          const combinedFindings = [];
+          const combinedSuggestions = [];
+          const combinedStats = {
+            totalRequests: 0,
+            secureRequests: 0,
+            httpRequests: 0,
+            blockedRequests: 0,
+            payloadAlerts: 0,
+            trackersDetected: 0,
+            headersPresent: 0,
+            headersMissing: 0,
+          };
+
+          webTabIds.forEach(tid => {
+            if (securityData.requests[tid]) allRequests = allRequests.concat(securityData.requests[tid]);
+            if (securityData.headers[tid]) {
+              Object.assign(allHeadersMap, securityData.headers[tid]);
+            }
+            if (securityData.trackers[tid]) {
+              Object.entries(securityData.trackers[tid]).forEach(([domain, trk]) => {
+                if (allTrackers[domain]) {
+                  allTrackers[domain].requests += trk.requests;
+                } else {
+                  allTrackers[domain] = { ...trk };
+                }
+              });
+            }
+            if (securityData.payloadAlerts[tid]) allPayloadAlerts = allPayloadAlerts.concat(securityData.payloadAlerts[tid]);
+            if (securityData.scriptScans[tid]) allScriptScans = allScriptScans.concat(securityData.scriptScans[tid]);
+            if (securityData.behavioralAlerts[tid]) allBehavioralAlerts = allBehavioralAlerts.concat(securityData.behavioralAlerts[tid]);
+
+            // Run generateAudit for score/findings aggregation
+            const tabObj = tabs.find(t => t.id === tid);
+            const domain = tabObj && tabObj.url ? new URL(tabObj.url).hostname : 'Site';
+            const audit = generateAudit(tid);
+            totalScore += audit.score;
+            activeWebTabCount++;
+
+            combinedStats.totalRequests += audit.stats.totalRequests;
+            combinedStats.secureRequests += audit.stats.secureRequests;
+            combinedStats.httpRequests += audit.stats.httpRequests;
+            combinedStats.blockedRequests += audit.stats.blockedRequests;
+            combinedStats.payloadAlerts += audit.stats.payloadAlerts;
+            combinedStats.trackersDetected += audit.stats.trackersDetected;
+            combinedStats.headersPresent += audit.stats.headersPresent;
+            combinedStats.headersMissing += audit.stats.headersMissing;
+
+            audit.findings.forEach(f => {
+              combinedFindings.push({
+                ...f,
+                title: `[${domain}] ${f.title}`,
+              });
+            });
+
+            audit.suggestions.forEach(s => {
+              if (!combinedSuggestions.some(cs => cs.title === s.title)) {
+                combinedSuggestions.push(s);
+              }
+            });
+          });
+
+          // Sort requests, payloadAlerts, scriptScans, behavioralAlerts by timestamp
+          allRequests.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+          allPayloadAlerts.sort((a, b) => a.timestamp - b.timestamp);
+          allScriptScans.sort((a, b) => a.timestamp - b.timestamp);
+          allBehavioralAlerts.sort((a, b) => a.timestamp - b.timestamp);
+
+          const avgScore = activeWebTabCount > 0 ? Math.round(totalScore / activeWebTabCount) : 100;
+          const finalAudit = {
+            score: avgScore,
+            grade: getGrade(avgScore),
+            findings: combinedFindings,
+            suggestions: combinedSuggestions,
+            stats: combinedStats,
+            isSystemPage: false,
+          };
+
+          const flatHeaders = [];
+          Object.entries(allHeadersMap).forEach(([domain, dh]) => {
+            Object.values(dh).forEach(h => {
+              flatHeaders.push({ ...h, domain });
+            });
+          });
+
+          sendResponse({
+            requests: allRequests,
+            headers: flatHeaders,
+            trackers: Object.values(allTrackers),
+            payloadAlerts: allPayloadAlerts,
+            scriptScans: allScriptScans,
+            behavioralAlerts: allBehavioralAlerts,
+            localBlockedDomains: securityData.localBlockedDomains || [],
+            blockedDomainsMetadata: securityData.blockedDomainsMetadata || {},
+            updateAvailable: securityData.updateAvailable || null,
+            updateReadyToReload: securityData.updateReadyToReload || null,
+            globalThreatLog: securityData.globalThreatLog || [],
+            activeTabsList: activeTabsList,
+            audit: finalAudit,
+            tabId: 'all',
+          });
+          return;
+        }
 
         const getResponse = (tid, isSystemPage = false) => {
           const requests = securityData.requests[tid] || [];
@@ -1406,12 +1543,26 @@ function detachAllDebuggers() {
   }
 }
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  await stateLoaded;
   if (changeInfo.status === 'loading') {
     if (securityData.settings.debuggerEnabled) {
       detachDebugger(tabId);
       attachDebugger(tabId);
     }
+  }
+  // Sync active tab state on navigation/URL updates if tab is currently active
+  if (tab.active && tab.url) {
+    try {
+      const u = new URL(tab.url);
+      if (u.protocol === 'http:' || u.protocol === 'https:') {
+        if (securityData.activeTab !== tabId) {
+          securityData.activeTab = tabId;
+          chrome.storage.session.set({ activeTab: tabId });
+          saveStateAndNotify(tabId);
+        }
+      }
+    } catch {}
   }
 });
 
