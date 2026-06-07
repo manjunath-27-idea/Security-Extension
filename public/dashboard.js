@@ -137,8 +137,35 @@ function loadDashboard() {
       console.error('Failed to load:', chrome.runtime.lastError);
       return;
     }
+
+    // Filter activeTabsList to only contain actual websites (http/https)
+    const webTabs = (response.activeTabsList || []).filter(tab => {
+      return tab.url.startsWith('http:') || tab.url.startsWith('https:');
+    });
+
+    // If currentTabId is not a web tab, fall back to the active web tab or first website
+    const isWebTab = (tid) => webTabs.some(t => t.id === tid);
+    if (!isWebTab(currentTabId)) {
+      const activeWebTab = webTabs.find(t => t.isActive) || webTabs[0];
+      if (activeWebTab) {
+        currentTabId = activeWebTab.id;
+        // Reload data for the fallback web tab
+        chrome.runtime.sendMessage({ action: 'getSecurityData', tabId: currentTabId }, (newResponse) => {
+          if (!chrome.runtime.lastError && newResponse) {
+            lastLoadedData = newResponse;
+            const newWebTabs = (newResponse.activeTabsList || []).filter(tab => {
+              return tab.url.startsWith('http:') || tab.url.startsWith('https:');
+            });
+            renderAll({ ...newResponse, activeTabsList: newWebTabs });
+            updateLastUpdate();
+          }
+        });
+        return;
+      }
+    }
+
     lastLoadedData = response;
-    renderAll(response);
+    renderAll({ ...response, activeTabsList: webTabs });
     updateLastUpdate();
   });
 }
