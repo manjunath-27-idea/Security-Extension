@@ -312,6 +312,38 @@ function renderActiveTabsDropdown(activeTabs, selectedTabId) {
   dropdown.innerHTML = optionsHTML;
 }
 
+function formatHistoryTimestamp(item) {
+  const todayStr = new Date().toLocaleDateString();
+  const arrivals = item.arrivals || [{ timestamp: item.timestamp, count: item.count || 1 }];
+
+  // Group arrivals by date
+  const groups = {};
+  arrivals.forEach(arr => {
+    const d = new Date(arr.timestamp);
+    const dateStr = d.toLocaleDateString();
+    const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const countSuffix = arr.count > 1 ? ` (x${arr.count})` : '';
+
+    if (!groups[dateStr]) {
+      groups[dateStr] = [];
+    }
+    groups[dateStr].push(`${timeStr}${countSuffix}`);
+  });
+
+  const formattedGroups = Object.entries(groups).map(([dateStr, times]) => {
+    if (dateStr === todayStr) {
+      return times.join(', ');
+    } else {
+      return `${dateStr} (${times.join(', ')})`;
+    }
+  });
+
+  const display = formattedGroups.slice(-3).join('; ') + (formattedGroups.length > 3 ? ' ...' : '');
+  const tooltip = Object.entries(groups).map(([dateStr, times]) => `${dateStr}: ${times.join(', ')}`).join('\n');
+
+  return { display, tooltip };
+}
+
 function renderGlobalHistory(historyLog) {
   const container = document.getElementById('globalHistoryContent');
   if (!container) return;
@@ -340,8 +372,8 @@ function renderGlobalHistory(historyLog) {
       </thead>
       <tbody>
         ${historyLog.slice().reverse().map(item => {
-          const time = formatTime(item.timestamp);
-          const date = new Date(item.timestamp).toLocaleDateString();
+          const { display, tooltip } = formatHistoryTimestamp(item);
+
           let catClass = 'medium';
           if (item.category.toLowerCase().includes('critical') || item.category.toLowerCase().includes('malware')) {
             catClass = 'critical';
@@ -358,8 +390,8 @@ function renderGlobalHistory(historyLog) {
 
           return `
             <tr style="border-bottom: 1px solid var(--border); font-size: 13px;">
-              <td style="padding: 12px 16px; color: var(--muted); font-size: 11px;" title="${date}">
-                ${time}
+              <td style="padding: 12px 16px; color: var(--muted); font-size: 11px;" title="${escHtml(tooltip)}">
+                ${escHtml(display)}
               </td>
               <td style="padding: 12px 16px; color: var(--text); font-weight: 600;">
                 ${escHtml(item.domain)}

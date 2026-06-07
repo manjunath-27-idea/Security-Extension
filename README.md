@@ -1,4 +1,4 @@
-# Shield Sandbox Firewall v2.5.0
+# Shield Sandbox Firewall v2.5.1
 
 A professional, high-performance Chrome security extension designed to perform deep packet inspection, prevent PII/secret exfiltration, override behavioral fingerprinting vectors, and block trackers natively using browser-level filtering rules.
 
@@ -92,7 +92,11 @@ Shield Sandbox Firewall operates across four execution environments to balance d
 
 ## 📅 Version History & Release Logs
 
-### v2.5.0 (Current) — Popup & Redirect Blocker
+### v2.5.1 (Current) — In-Page Toasts & Threat Log Deduplication
+* **Bottom-Left Page-Level Update Toasts**: Injected warning toasts inside browser pages when an update or reload is ready, replacing OS-level desktop notification clutter with interactive restart elements.
+* **Threat Log Arrivals Deduplication**: Grouped identical threats under a single site threat entry. When threat events occur within the same minute, the count is incremented (e.g. `14:08 (x2)`). When multiple events occur on the same date, they are displayed grouped together, displaying only the times and suppressing redundant date text.
+
+### v2.5.0 — Popup & Redirect Blocker
 * **Dynamic Popup Tab Prevention**: Automatically intercepts `chrome.tabs.onCreated` and `chrome.tabs.onUpdated` in the background worker. Compares opening popup URLs against the parent tab's registered user-initiated click events. If no match is found, the unsolicited popup is automatically closed, and a warning is logged.
 * **Location Hijack Rollback**: Detects unauthorized current-tab redirects to external adware domains (like `xm.com`). Instantly rolls back the navigation to the previous page if the transition lacks verified user intent (click records) and the target is not whitelisted.
 * **Main-World window.open Overrides**: Patched `window.open` inside the page main-world context (`injector.js`) to reject window creation scripts that attempt to redirect or spawn popups to external hosts.

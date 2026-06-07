@@ -1,5 +1,5 @@
 /**
- * Security Extension - Background Service Worker v2.4.4
+ * Security Extension - Background Service Worker v2.5.1
  * 
  * Persistent & Robust for Manifest V3:
  *  - Persists state in chrome.storage.session to survive Service Worker idle terminations.
@@ -1335,7 +1335,7 @@ if (chrome.downloads) {
   }
 }
 
-console.log('[Security Extension] Background worker v2.4.3 initialized');
+console.log('[Security Extension] Background worker v2.5.1 initialized');
 
 // ─── Declarative Net Request Dynamic Rules ───────────────────────────────────
 function setupDeclarativeRules() {
@@ -1630,6 +1630,22 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       }
     } catch {}
   }
+
+  if (changeInfo.status === 'complete') {
+    if (securityData.updateReadyToReload) {
+      chrome.tabs.sendMessage(tabId, {
+        action: 'showUpdateToast',
+        updateType: 'reload',
+        version: securityData.updateReadyToReload.version
+      }).catch(() => {});
+    } else if (securityData.updateAvailable) {
+      chrome.tabs.sendMessage(tabId, {
+        action: 'showUpdateToast',
+        updateType: 'update',
+        version: securityData.updateAvailable.version
+      }).catch(() => {});
+    }
+  }
 });
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
@@ -1719,15 +1735,49 @@ function addToGlobalLog(tabId, url, label, category, domain, action) {
   if (!securityData.globalThreatLog) {
     securityData.globalThreatLog = [];
   }
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString();
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+  // Find if there is an existing entry for the same domain, label, category, and action
+  const existing = securityData.globalThreatLog.slice().reverse().find(entry => {
+    return entry.domain === domain && entry.label === label && entry.category === category && entry.action === action;
+  });
+
+  if (existing) {
+    if (!existing.arrivals) {
+      existing.arrivals = [{ timestamp: existing.timestamp, count: existing.count || 1 }];
+    }
+
+    const lastArrival = existing.arrivals[existing.arrivals.length - 1];
+    const lastDate = new Date(lastArrival.timestamp).toLocaleDateString();
+    const lastTime = new Date(lastArrival.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+    if (lastDate === dateStr && lastTime === timeStr) {
+      lastArrival.count = (lastArrival.count || 1) + 1;
+      lastArrival.timestamp = now.toISOString();
+    } else {
+      existing.arrivals.push({ timestamp: now.toISOString(), count: 1 });
+    }
+
+    existing.timestamp = now.toISOString();
+    existing.count = existing.arrivals.reduce((sum, a) => sum + (a.count || 1), 0);
+    saveState();
+    return;
+  }
+
   const entry = {
     id: `threat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    timestamp: new Date().toISOString(),
+    timestamp: now.toISOString(),
     tabId: tabId || null,
     url: url || 'N/A',
     label: label || 'Unknown Threat',
     category: category || 'General',
     domain: domain || 'Unknown Domain',
-    action: action || 'Alerted'
+    action: action || 'Alerted',
+    count: 1,
+    arrivals: [{ timestamp: now.toISOString(), count: 1 }]
   };
   securityData.globalThreatLog.push(entry);
   if (securityData.globalThreatLog.length > 500) {
@@ -1736,6 +1786,27 @@ function addToGlobalLog(tabId, url, label, category, domain, action) {
 }
 
 // ─── Git Version Checker & Extension Reload Helpers ──────────────────────────
+function broadcastUpdateToastToActiveTab() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs && tabs[0] && tabs[0].id) {
+      const activeTabId = tabs[0].id;
+      if (securityData.updateReadyToReload) {
+        chrome.tabs.sendMessage(activeTabId, {
+          action: 'showUpdateToast',
+          updateType: 'reload',
+          version: securityData.updateReadyToReload.version
+        }).catch(() => {});
+      } else if (securityData.updateAvailable) {
+        chrome.tabs.sendMessage(activeTabId, {
+          action: 'showUpdateToast',
+          updateType: 'update',
+          version: securityData.updateAvailable.version
+        }).catch(() => {});
+      }
+    }
+  });
+}
+
 function compareVersions(v1, v2) {
   const p1 = v1.split('.').map(Number);
   const p2 = v2.split('.').map(Number);
@@ -1761,10 +1832,8 @@ function checkVersionUpdate() {
           version: remoteVersion,
           url: 'https://github.com/manjunath-27-idea/Security-Extension'
         };
-        
-
-        
         saveState();
+        broadcastUpdateToastToActiveTab();
       } else {
         delete securityData.updateAvailable;
         saveState();
@@ -1779,10 +1848,8 @@ function checkVersionUpdate() {
       const localVersion = data.version;
       if (localVersion && compareVersions(localVersion, runningVersion) > 0) {
         securityData.updateReadyToReload = { version: localVersion };
-        
-
-        
         saveState();
+        broadcastUpdateToastToActiveTab();
       } else {
         delete securityData.updateReadyToReload;
         saveState();
