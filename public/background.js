@@ -1,5 +1,5 @@
 /**
- * Security Extension - Background Service Worker v2.5.1
+ * Security Extension - Background Service Worker v2.5.2
  * 
  * Persistent & Robust for Manifest V3:
  *  - Persists state in chrome.storage.session to survive Service Worker idle terminations.
@@ -242,14 +242,18 @@ function generateAudit(tabId) {
   const highAlerts = payloadAlerts.filter(a => a.findings.some(f => f.severity === 'high'));
 
   if (criticalAlerts.length > 0) {
-    score -= criticalAlerts.length * 30;
+    let criticalDeduction = 0;
+    criticalAlerts.forEach(a => {
+      criticalDeduction += a.blocked ? 5 : 30;
+    });
+    score -= criticalDeduction;
     findings.push({
       id: 'payload-critical',
       category: 'Payload Inspection',
       severity: 'critical',
       icon: '🔑',
       title: `${criticalAlerts.length} Critical Data Leak(s) Detected`,
-      detail: criticalAlerts.map(a => `${a.findings.map(f => f.label).join(', ')} → ${a.url}`).join('\n'),
+      detail: criticalAlerts.map(a => `${a.findings.map(f => f.label).join(', ')} → ${a.url} (${a.blocked ? 'BLOCKED' : 'ALLOWED'})`).join('\n'),
       blocked: criticalAlerts.some(a => a.blocked),
     });
     suggestions.push({
@@ -267,7 +271,11 @@ function generateAudit(tabId) {
   }
 
   if (highAlerts.length > 0) {
-    score -= highAlerts.length * 10;
+    let highDeduction = 0;
+    highAlerts.forEach(a => {
+      highDeduction += a.blocked ? 2 : 10;
+    });
+    score -= highDeduction;
     findings.push({
       id: 'payload-high',
       category: 'Payload Inspection',
@@ -275,7 +283,7 @@ function generateAudit(tabId) {
       icon: '🗝️',
       title: `${highAlerts.length} Sensitive Token(s) in Outgoing Requests`,
       detail: 'API keys or wallet addresses detected in request payloads.',
-      blocked: false,
+      blocked: highAlerts.some(a => a.blocked),
     });
     suggestions.push({
       priority: 'high',
@@ -377,14 +385,14 @@ function generateAudit(tabId) {
   const mediumRisk = trackerArray.filter(t => t.riskLevel === 'medium');
 
   if (highRisk.length > 0) {
-    score -= highRisk.length * 8;
+    score -= highRisk.length * 1; // Mitigated from 8 (DNR Blocked)
     findings.push({
       id: 'trackers-high',
       category: 'Privacy',
       severity: 'high',
       icon: '👁️',
-      title: `${highRisk.length} High-Risk Tracker(s) Active`,
-      detail: highRisk.map(t => `${t.name} (${t.requests} requests)`).join(', '),
+      title: `${highRisk.length} High-Risk Tracker(s) Blocked`,
+      detail: highRisk.map(t => `${t.name} (${t.requests} requests) [BLOCKED]`).join(', '),
     });
     suggestions.push({
       priority: 'high',
@@ -400,7 +408,7 @@ function generateAudit(tabId) {
   }
 
   if (mediumRisk.length > 0) {
-    score -= mediumRisk.length * 3;
+    score -= mediumRisk.length * 0.5; // Mitigated from 3 (DNR Blocked)
   }
 
   // ── 5. Mixed Content ──
@@ -528,14 +536,14 @@ function generateAudit(tabId) {
     const wasmAlerts = behavioralAlerts.filter(a => a.type.includes('WASM'));
 
     if (fingerprintAlerts.length > 0) {
-      score -= fingerprintAlerts.length * 15;
+      score -= fingerprintAlerts.length * 2; // Mitigated from 15 (Poisoned & Mitigated)
       findings.push({
         id: 'behavior-fingerprint',
         category: 'Behavioral Protection',
         severity: 'high',
         icon: '👤',
-        title: `Fingerprinting Attempt Blocked & Poisoned`,
-        detail: fingerprintAlerts.map(a => `${a.type}: ${a.desc}`).join('\n'),
+        title: `Fingerprinting Attempt Poisoned & Mitigated`,
+        detail: fingerprintAlerts.map(a => `${a.type}: ${a.desc} [MITIGATED]`).join('\n'),
       });
       suggestions.push({
         priority: 'high',
@@ -1335,7 +1343,7 @@ if (chrome.downloads) {
   }
 }
 
-console.log('[Security Extension] Background worker v2.5.1 initialized');
+console.log('[Security Extension] Background worker v2.5.2 initialized');
 
 // ─── Declarative Net Request Dynamic Rules ───────────────────────────────────
 function setupDeclarativeRules() {

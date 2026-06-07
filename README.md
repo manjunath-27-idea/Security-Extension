@@ -1,4 +1,4 @@
-# Shield Sandbox Firewall v2.5.1
+# Shield Sandbox Firewall v2.5.2
 
 A professional, high-performance Chrome security extension designed to perform deep packet inspection, prevent PII/secret exfiltration, override behavioral fingerprinting vectors, and block trackers natively using browser-level filtering rules.
 
@@ -92,7 +92,10 @@ Shield Sandbox Firewall operates across four execution environments to balance d
 
 ## 📅 Version History & Release Logs
 
-### v2.5.1 (Current) — In-Page Toasts & Threat Log Deduplication
+### v2.5.2 (Current) — Defense-Aware Security Scoring
+* **Defense-Aware Mitigation Scale**: Transitioned the security scoring engine to respect active firewall blocks and browser shielding. Critical payload exfiltration leaks drop deductions from `-30` to `-5` when blocked, high-risk exfiltrations drop from `-10` to `-2`, and programmatically blocked trackers drop from `-8`/`-3` to `-1`/`-0.5`. Poisoned fingerprint attempts drop deductions from `-15` to `-2`. This keeps security grades representative of actual user protection.
+
+### v2.5.1 — In-Page Toasts & Threat Log Deduplication
 * **Bottom-Left Page-Level Update Toasts**: Injected warning toasts inside browser pages when an update or reload is ready, replacing OS-level desktop notification clutter with interactive restart elements.
 * **Threat Log Arrivals Deduplication**: Grouped identical threats under a single site threat entry. When threat events occur within the same minute, the count is incremented (e.g. `14:08 (x2)`). When multiple events occur on the same date, they are displayed grouped together, displaying only the times and suppressing redundant date text.
 
