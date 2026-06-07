@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Shield Sandbox Firewall",
-  "version": "2.4.6",
+  "version": "2.4.7",
   "description": "Real-time security: deep payload inspection and local request firewall.",
   "permissions": [
     "webRequest",

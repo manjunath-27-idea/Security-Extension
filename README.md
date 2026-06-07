@@ -1,4 +1,4 @@
-# Shield Sandbox Firewall v2.4.6
+# Shield Sandbox Firewall v2.4.7
 
 A professional, high-performance Chrome security extension designed to perform deep packet inspection, prevent PII/secret exfiltration, override behavioral fingerprinting vectors, and block trackers natively using browser-level filtering rules.
 
@@ -92,7 +92,11 @@ Shield Sandbox Firewall operates across four execution environments to balance d
 
 ## 📅 Version History & Release Logs
 
-### v2.4.6 (Current) — Native Notification Audit
+### v2.4.7 (Current) — UI Styling & Clear Button Redesign
+* **Redesigned Clear Buttons**: Styled all "Clear" buttons (Dashboard header, Global Threat History, and Extension Popup logs) in cohesive red styling (`var(--red)`) across both dark and light modes.
+* **Inline Style Cleanup**: Refactored the inline color styles on the threat history clear button into centralized CSS rules.
+
+### v2.4.6 — Native Notification Audit
 * **Clean Desktop Notification Tray**: Removed OS/system-level notifications (`chrome.notifications.create`) for DoubleClick tracker blocks, request firewalls, critical payload leaks, script debugger parses, remote update alarms, local reload requests, and reload success callbacks.
 * **In-App Notification Focus**: Relayed these alerts to webpage toasts (inside Chrome browser pages) and dashboard inline banners to prevent OS desktop clutter.
 * **Urgent Download Alerts**: Preserved native desktop notifications exclusively for **Suspicious Download Paused** events.

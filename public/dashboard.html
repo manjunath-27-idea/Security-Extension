@@ -283,6 +283,17 @@
     }
     .btn-ghost:hover { background: rgba(255,255,255,0.06); color: var(--text); }
 
+    #btnClear, #btnClearGlobalHistory {
+      color: var(--red) !important;
+      border-color: rgba(239, 68, 68, 0.2) !important;
+      background: rgba(239, 68, 68, 0.02) !important;
+    }
+    #btnClear:hover, #btnClearGlobalHistory:hover {
+      background: rgba(239, 68, 68, 0.08) !important;
+      border-color: rgba(239, 68, 68, 0.4) !important;
+      color: var(--red) !important;
+    }
+
     .last-update { font-size: 10px; color: var(--muted); font-family: var(--mono); }
 
     /* ── Layout ── */
@@ -908,15 +919,19 @@
     </div>
     <div>
       <div class="logo-text">Shield Dashboard</div>
-      <span class="logo-sub">v2.4.4 · Control Center</span>
+      <span class="logo-sub">v2.4.7 · Control Center</span>
     </div>
   </a>
   <div class="topbar-mid">
     <div class="tab-selector-container" style="display: flex; align-items: center; gap: 8px;">
       <span style="font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px;">Inspecting Tab:</span>
-      <select id="activeTabsDropdown" style="background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 6px 12px; font-size: 12.5px; font-weight: 600; outline: none; font-family: var(--sans); cursor: pointer; max-width: 250px; transition: border-color 0.2s;">
+      <select id="activeTabsDropdown" style="background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 6px 12px; font-size: 12.5px; font-weight: 600; outline: none; font-family: var(--sans); cursor: pointer; max-width: 200px; transition: border-color 0.2s;">
         <option value="">Loading tabs...</option>
       </select>
+      <label style="display: flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; color: var(--muted); cursor: pointer; user-select: none; margin-left: 6px;" title="Automatically inspect the browser tab you currently view">
+        <input type="checkbox" id="autoFollowCheckbox" checked style="cursor: pointer; accent-color: var(--indigo);">
+        AUTO-FOLLOW
+      </label>
     </div>
   </div>
   <div class="topbar-right">
@@ -1147,7 +1162,7 @@
       <div class="card">
         <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
           <span>📋 Global Threat History Log</span>
-          <button class="btn btn-ghost" id="btnClearGlobalHistory" style="padding: 6px 12px; font-size: 11.5px; border-color: rgba(239, 68, 68, 0.2); color: var(--red);">Clear History</button>
+          <button class="btn btn-ghost" id="btnClearGlobalHistory" style="padding: 6px 12px; font-size: 11.5px;">Clear History</button>
         </div>
         <div id="globalHistoryContent">
           <div class="empty-state">No global events captured yet</div>
