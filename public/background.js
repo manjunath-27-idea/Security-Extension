@@ -1,5 +1,5 @@
 /**
- * Security Extension - Background Service Worker v2.4.2
+ * Security Extension - Background Service Worker v2.4.3
  * 
  * Persistent & Robust for Manifest V3:
  *  - Persists state in chrome.storage.session to survive Service Worker idle terminations.
@@ -13,6 +13,9 @@
 if (chrome.storage?.session) {
   chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' }).catch(() => {});
 }
+
+// ─── Notification Anti-Spam Cache ────────────────────────────────────────────
+const recentlyNotifiedBlocks = {};
 
 // ─── Serializable State Store ────────────────────────────────────────────────
 const securityData = {
@@ -635,6 +638,22 @@ function recordTracker(tabId, domain, tracker, sourceUrl) {
       timestamp: Date.now()
     };
   }
+
+  // Trigger system notification if DoubleClick is disabled/recorded for the first time
+  if (domain.includes('doubleclick')) {
+    const now = Date.now();
+    const lastNotified = recentlyNotifiedBlocks[domain] || 0;
+    if (now - lastNotified > 10000) {
+      recentlyNotifiedBlocks[domain] = now;
+      chrome.notifications?.create({
+        type: 'basic',
+        iconUrl: 'images/icon-48.png',
+        title: '🚫 DoubleClick Disabled',
+        message: 'DoubleClick tracker was detected and automatically disabled.',
+        priority: 1,
+      });
+    }
+  }
 }
 
 chrome.webRequest.onHeadersReceived.addListener(
@@ -719,6 +738,31 @@ chrome.webRequest.onBeforeRequest.addListener(
       initiator: details.initiator || null,
     });
     if (reqs.length > 100) reqs.shift();
+
+    // Trigger system notification on firewall block
+    if (isBlockedDomain) {
+      const now = Date.now();
+      const lastNotified = recentlyNotifiedBlocks[domain] || 0;
+      if (now - lastNotified > 10000) {
+        recentlyNotifiedBlocks[domain] = now;
+        
+        let title = '🛡️ Request Blocked';
+        let message = `Blocked connection to threat domain: ${domain}`;
+        
+        if (domain.includes('doubleclick')) {
+          title = '🚫 DoubleClick Disabled';
+          message = 'DoubleClick tracking request was intercepted and disabled.';
+        }
+
+        chrome.notifications?.create({
+          type: 'basic',
+          iconUrl: 'images/icon-48.png',
+          title: title,
+          message: message,
+          priority: 1,
+        });
+      }
+    }
 
     saveStateAndNotify(details.tabId, threatType);
   },
@@ -1092,7 +1136,7 @@ if (chrome.downloads) {
   }
 }
 
-console.log('[Security Extension] Background worker v2.4.2 initialized');
+console.log('[Security Extension] Background worker v2.4.3 initialized');
 
 // ─── Declarative Net Request Dynamic Rules ───────────────────────────────────
 function setupDeclarativeRules() {
@@ -1189,6 +1233,30 @@ if (chrome.declarativeNetRequest?.onRuleMatchedDebug) {
       status: 'BLOCKED',
     });
     if (reqs.length > 100) reqs.shift();
+
+    // Trigger system notification on DNR block matching
+    const now = Date.now();
+    const lastNotified = recentlyNotifiedBlocks[domain] || 0;
+    if (now - lastNotified > 10000) {
+      recentlyNotifiedBlocks[domain] = now;
+      
+      let title = '🛡️ Native DNR Block';
+      let message = `${threatLabel} request blocked: ${domain}`;
+
+      if (domain.includes('doubleclick')) {
+        title = '🚫 DoubleClick Disabled';
+        message = 'DoubleClick tracking request was intercepted and disabled.';
+      }
+
+      chrome.notifications?.create({
+        type: 'basic',
+        iconUrl: 'images/icon-48.png',
+        title: title,
+        message: message,
+        priority: 1,
+      });
+    }
+
     saveStateAndNotify(tabId, typeMsg);
   });
 }

@@ -1,4 +1,4 @@
-# Shield Sandbox Firewall v2.4.2
+# Shield Sandbox Firewall v2.4.3
 
 A professional, high-performance Chrome security extension designed to perform deep packet inspection, prevent PII/secret exfiltration, override behavioral fingerprinting vectors, and block trackers natively using browser-level filtering rules.
 
@@ -62,7 +62,12 @@ Shield Sandbox Firewall operates across four execution environments to balance d
 
 ## 📅 Version History & Release Logs
 
-### v2.4.2 (Current) — Premium Styling & Source Context Tracking
+### v2.4.3 (Current) — Native System Notifications on Block
+* **Firewall Blocks System Notifications**: Intercepts blocked domains and displays a native Chrome push notification showing the threat categorization and blocked host.
+* **DoubleClick Disabled Notification**: Detects DoubleClick ad/analytics trackers and creates a dedicated system alert signifying when tracking has been disabled on the tab.
+* **Notification Anti-Spam Cache**: Built an in-memory decay buffer to prevent multiple simultaneous blocking events on a single page from spamming the system tray.
+
+### v2.4.2 — Premium Styling & Source Context Tracking
 * **Typography & UI Polish**: Upgraded all text elements to `Inter`. Tailored harmonious dark/light color variables, premium shadows, and translucent top/sidebars.
 * **Animated Elements**: Implemented dynamic keyframe background pulses in the Control Center dashboard and subtle animated glow overlays in the popup.
 * **Source/Origin Context**: Modified `recordTracker` and webRequest listeners to capture and log request initiators (`details.initiator`), displaying exactly *which site* requested a tracker domain.
