@@ -13,6 +13,36 @@ A professional, high-performance Chrome security extension designed to perform d
 
 ---
 
+## 🛡️ Security Capabilities & Performance Characteristics
+
+This extension implements several core security modules designed to run in parallel with zero-to-low overhead:
+
+### 1. DNR - Declarative Net Request (Native Firewall)
+* **Abbreviation**: **DNR** / **NFW** (Native Firewall)
+* **How it performs**: Operates directly at Chrome's native C++ network filtering layer. By compiling static blocklists and custom user domains into dynamic dynamic rules, it discards requests to tracking systems and malware nodes prior to DNS resolution or TCP handshakes, introducing 0ms of javascript execution delay.
+
+### 2. DPI - Deep Packet Inspection (PII/Secret Leak Protection)
+* **Abbreviation**: **DPI** / **PII** (Personally Identifiable Information)
+* **How it performs**: Monkey-patches main-world API hooks for `fetch()` and `XMLHttpRequest.send()`. Evaluates payload bodies dynamically for seed phrases (BIP39), EVM private keys, wallet address formats, and key/tokens. When the **Payload Firewall (PF)** is switched on, matching requests are immediately aborted.
+
+### 3. DPS - Deep Packet Script Scan (Debugger JS Parser)
+* **Abbreviation**: **DPS** / **SDP** (Script Debugger Parser)
+* **How it performs**: Connects Chrome's native `debugger` protocol to analyze scripts parse-by-parse. Scans for dynamic code strings (`eval`), constructor calls (`new Function`), storage credentials harvesting, and hex obfuscation. Runs completely asynchronously to prevent webpage rendering blocks.
+
+### 4. BPS - Behavioral Protection Shield (Fingerprint Poisoning)
+* **Abbreviation**: **BPS** / **FSP** (Fingerprinting Spoofing Protection)
+* **How it performs**: Intercepts DOM canvas buffer calls (`getImageData`, `toDataURL`) and `AudioContext` sweeps. Injects random pixel noise into query results when triggered in the background without user gesture flags. This poisons tracker fingerprint hashes without causing visual or audio distortions.
+
+### 5. SDI - Suspicious Download Interceptor (File Shield)
+* **Abbreviation**: **SDI** / **FSD** (File Shield Downloads)
+* **How it performs**: Hooks into `chrome.downloads.onCreated` to check incoming file names and target URLs. Executables and installers (like `.exe`, `.msi`, `.bat`, `.ps1`) are instantly paused. The system alerts the user via native OS notifications containing action buttons to Resume/Cancel.
+
+### 6. MHA - Mixed Content & Security Headers Audit
+* **Abbreviation**: **MHA** / **SHA** (Security Headers Audit)
+* **How it performs**: Inspects incoming HTTP headers (CSP, HSTS, X-Frame-Options) and scans web layouts for unencrypted frame loads or logins on plain HTTP. Grades sites from A to F and renders immediate remediation guidelines.
+
+---
+
 ## 🏛️ Extension Architecture & Data Flow
 
 Shield Sandbox Firewall operates across four execution environments to balance deep threat mitigation, low-overhead native network filtering, and sandboxed UI rendering under Manifest V3:
