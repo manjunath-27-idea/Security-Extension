@@ -1,5 +1,5 @@
 /**
- * Security Extension - Background Service Worker v2.5.2
+ * Security Extension - Background Service Worker v2.5.3
  * 
  * Persistent & Robust for Manifest V3:
  *  - Persists state in chrome.storage.session to survive Service Worker idle terminations.
@@ -24,7 +24,8 @@ const WHITELISTED_DOMAINS = [
   'google.com', 'accounts.google.com', 'googleapis.com', 'recaptcha.net', 'hcaptcha.com',
   'facebook.com', 'm.facebook.com', 'twitter.com', 'x.com', 'github.com',
   'apple.com', 'microsoft.com', 'live.com', 'paypal.com', 'stripe.com',
-  'okta.com', 'auth0.com', 'amazon.com', 'google-analytics.com'
+  'okta.com', 'auth0.com', 'amazon.com', 'google-analytics.com',
+  'linkedin.com', 'instagram.com'
 ];
 
 function isDomainWhitelisted(domain) {
@@ -128,6 +129,8 @@ const stateLoaded = new Promise((resolve) => {
         Object.assign(securityData, result.securityData);
         if (!securityData.localBlockedDomains) {
           securityData.localBlockedDomains = [];
+        } else {
+          securityData.localBlockedDomains = securityData.localBlockedDomains.filter(d => !isDomainWhitelisted(d));
         }
         if (!securityData.blockedDomainsMetadata) {
           securityData.blockedDomainsMetadata = {};
@@ -647,6 +650,33 @@ function getDomain(url) {
   }
 }
 
+function getBaseDomain(host) {
+  if (!host) return '';
+  const parts = host.split('.');
+  if (parts.length <= 2) return host;
+  const last = parts[parts.length - 1];
+  const secondLast = parts[parts.length - 2];
+  const cctlds = ['co', 'com', 'org', 'net', 'gov', 'nic', 'edu', 'ac'];
+  if (cctlds.includes(secondLast) && parts.length > 2) {
+    return parts.slice(-3).join('.');
+  }
+  return parts.slice(-2).join('.');
+}
+
+function isThirdPartyRequest(requestUrl, initiatorUrl) {
+  if (!initiatorUrl) return false;
+  try {
+    const reqHost = getDomain(requestUrl);
+    const initHost = getDomain(initiatorUrl);
+    if (!reqHost || !initHost) return false;
+    
+    return getBaseDomain(reqHost) !== getBaseDomain(initHost);
+  } catch {
+    return false;
+  }
+}
+
+
 function checkTracker(domain) {
   for (const [d, info] of Object.entries(TRACKER_DOMAINS)) {
     if (domain.includes(d)) return info;
@@ -685,7 +715,7 @@ function recordTracker(tabId, domain, tracker, sourceUrl) {
   if (!securityData.blockedDomainsMetadata) {
     securityData.blockedDomainsMetadata = {};
   }
-  if (!securityData.localBlockedDomains.includes(domain)) {
+  if (!isDomainWhitelisted(domain) && !securityData.localBlockedDomains.includes(domain)) {
     securityData.localBlockedDomains.push(domain);
     securityData.blockedDomainsMetadata[domain] = {
       sourceUrl: resolvedSource,
@@ -693,7 +723,7 @@ function recordTracker(tabId, domain, tracker, sourceUrl) {
     };
     setupDeclarativeRules();
     console.log('[Shield active block] Automatically registered tracker to local blocklist:', domain, 'found on:', resolvedSource);
-  } else if (!securityData.blockedDomainsMetadata[domain]) {
+  } else if (!isDomainWhitelisted(domain) && !securityData.blockedDomainsMetadata[domain]) {
     securityData.blockedDomainsMetadata[domain] = {
       sourceUrl: resolvedSource,
       timestamp: Date.now()
@@ -758,11 +788,16 @@ chrome.webRequest.onBeforeRequest.addListener(
       'miner.c3pool.com',
       'urlhaus-test.malware-cnc.biz'
     ];
-    const isBlockedDomain = defaultBlockDomains.includes(domain) || 
-                            (securityData.localBlockedDomains && securityData.localBlockedDomains.includes(domain));
+    const isMainFrame = details.type === 'main_frame';
+    const isThirdParty = !isMainFrame && isThirdPartyRequest(details.url, details.initiator);
+
+    const isBlockedDomain = isThirdParty && (
+      defaultBlockDomains.includes(domain) || 
+      (securityData.localBlockedDomains && securityData.localBlockedDomains.includes(domain))
+    );
 
     const isSecure = details.url.startsWith('https');
-    const tracker = checkTracker(domain);
+    const tracker = isThirdParty ? checkTracker(domain) : null;
     const threat = !isSecure ? 'critical' : tracker ? 'warning' : 'none';
 
     let threatType = null;
@@ -1182,7 +1217,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     if (request.action === 'addLocalBlockDomain') {
       const domain = request.domain.trim().toLowerCase();
-      if (domain && !securityData.localBlockedDomains.includes(domain)) {
+      if (domain && !isDomainWhitelisted(domain) && !securityData.localBlockedDomains.includes(domain)) {
         securityData.localBlockedDomains.push(domain);
         if (!securityData.blockedDomainsMetadata) {
           securityData.blockedDomainsMetadata = {};
@@ -1343,7 +1378,7 @@ if (chrome.downloads) {
   }
 }
 
-console.log('[Security Extension] Background worker v2.5.2 initialized');
+console.log('[Security Extension] Background worker v2.5.3 initialized');
 
 // ─── Declarative Net Request Dynamic Rules ───────────────────────────────────
 function setupDeclarativeRules() {
@@ -1369,7 +1404,8 @@ function setupDeclarativeRules() {
       action: { type: 'block' },
       condition: {
         urlFilter: domain,
-        resourceTypes: ['main_frame', 'sub_frame', 'stylesheet', 'script', 'image', 'xmlhttprequest']
+        domainType: 'thirdParty',
+        resourceTypes: ['sub_frame', 'stylesheet', 'script', 'image', 'xmlhttprequest']
       }
     }));
 
@@ -1556,7 +1592,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         if (chrome.runtime.lastError || !openerTab || !openerTab.url) return;
         try {
           const openerHost = new URL(openerTab.url).hostname;
-          const isExternal = targetHost && targetHost !== openerHost;
+          const isExternal = targetHost && getBaseDomain(targetHost) !== getBaseDomain(openerHost);
 
           if (securityData.settings?.heuristicsEnabled && isExternal) {
             const hasIntent = hasUserIntentForHost(openerTabId, targetHost);
@@ -1588,7 +1624,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       if (prevUrl) {
         try {
           const prevHost = new URL(prevUrl).hostname;
-          const isExternal = targetHost && targetHost !== prevHost;
+          const isExternal = targetHost && getBaseDomain(targetHost) !== getBaseDomain(prevHost);
 
           if (securityData.settings?.heuristicsEnabled && isExternal) {
             const hasIntent = hasUserIntentForHost(tabId, targetHost);
@@ -1656,13 +1692,35 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }
 });
 
+const tabScriptScanRates = {}; // tabId -> { count: number, resetTime: number }
+
 chrome.debugger.onEvent.addListener((source, method, params) => {
   const tabId = source.tabId;
   if (!tabId) return;
 
   if (method === 'Debugger.scriptParsed') {
-    const { scriptId, url } = params;
+    const { scriptId, url, length } = params;
     if (!url || url.startsWith('chrome-extension://') || url.startsWith('chrome://')) return;
+
+    // 1. CPU Protection: Skip scanning scripts that are extremely large (e.g. > 300KB) to prevent CPU spikes
+    if (length && length > 300000) {
+      console.log('[Shield Debugger] Skipping large script scan:', url, 'size:', length);
+      return;
+    }
+
+    // 2. CPU Protection: Throttle script scans per tab (max 10 scans/second) to prevent service worker crashes under heavy traffic
+    const now = Date.now();
+    if (!tabScriptScanRates[tabId]) {
+      tabScriptScanRates[tabId] = { count: 0, resetTime: now + 1000 };
+    }
+    if (now > tabScriptScanRates[tabId].resetTime) {
+      tabScriptScanRates[tabId] = { count: 0, resetTime: now + 1000 };
+    }
+
+    if (tabScriptScanRates[tabId].count >= 10) {
+      return; // Skip further scans this second
+    }
+    tabScriptScanRates[tabId].count++;
 
     chrome.debugger.sendCommand(source, 'Debugger.getScriptSource', { scriptId }, (result) => {
       if (chrome.runtime.lastError || !result || !result.scriptSource) return;
@@ -1831,7 +1889,7 @@ function checkVersionUpdate() {
   const runningVersion = chrome.runtime.getManifest().version;
 
   // 1. Fetch remote manifest from raw GitHub
-  fetch('https://raw.githubusercontent.com/manjunath-27-idea/Security-Extension/master/public/manifest.json')
+  fetch('https://raw.githubusercontent.com/manjunath-27-idea/Security-Extension/master/manifest.json')
     .then(r => r.json())
     .then(data => {
       const remoteVersion = data.version;

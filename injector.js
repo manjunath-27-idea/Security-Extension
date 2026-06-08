@@ -34,7 +34,8 @@
     'google.com', 'accounts.google.com', 'googleapis.com', 'recaptcha.net', 'hcaptcha.com',
     'facebook.com', 'm.facebook.com', 'twitter.com', 'x.com', 'github.com',
     'apple.com', 'microsoft.com', 'live.com', 'paypal.com', 'stripe.com',
-    'okta.com', 'auth0.com', 'amazon.com', 'google-analytics.com'
+    'okta.com', 'auth0.com', 'amazon.com', 'google-analytics.com',
+    'linkedin.com', 'instagram.com'
   ];
 
   function isDomainWhitelisted(domain) {

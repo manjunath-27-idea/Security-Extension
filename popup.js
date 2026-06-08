@@ -1,8 +1,16 @@
 /**
- * Security Extension - Redesigned Popup Script v2.5.2
+ * Security Extension - Redesigned Popup Script v2.5.3
  */
 
 let currentTabId = null;
+
+// Set version dynamically
+const versionLabel = document.getElementById('versionLabel');
+if (versionLabel) {
+  try {
+    versionLabel.textContent = 'v' + chrome.runtime.getManifest().version;
+  } catch (e) {}
+}
 
 // Theme Toggle Logic
 const themeToggleBtn = document.getElementById('themeToggleBtn');
@@ -84,6 +92,11 @@ document.getElementById('content').innerHTML = `
     </button>
   </div>
 `;
+
+// Setup static event listeners once
+document.getElementById('firewallCheckbox').addEventListener('change', toggleFirewall);
+document.getElementById('dashboardBtn').addEventListener('click', openDashboard);
+document.getElementById('clearBtn').addEventListener('click', clearData);
 
 // Fetch active tab information
 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -208,11 +221,6 @@ function renderPopup(data) {
       bannerContainer.innerHTML = '';
     }
   }
-
-  // Setup Event Listeners
-  document.getElementById('firewallCheckbox').addEventListener('change', toggleFirewall);
-  document.getElementById('dashboardBtn').addEventListener('click', openDashboard);
-  document.getElementById('clearBtn').addEventListener('click', clearData);
 }
 
 function updateFirewallUI(enabled) {

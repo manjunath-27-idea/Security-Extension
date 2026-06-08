@@ -1,5 +1,5 @@
 /**
- * Security Extension - Redesigned Dashboard Script v2.4.3
+ * Security Extension - Redesigned Dashboard Script v2.5.3
  */
 
 let currentTabId = null;
@@ -7,6 +7,15 @@ let refreshInterval = null;
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  // Set version dynamically
+  const logoSub = document.getElementById('logoSub');
+  if (logoSub) {
+    try {
+      const version = chrome.runtime.getManifest().version;
+      logoSub.textContent = `v${version} · Control Center`;
+    } catch (e) {}
+  }
+
   const urlParams = new URLSearchParams(window.location.search);
   const paramTabId = urlParams.get('tabId');
   

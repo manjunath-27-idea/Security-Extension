@@ -146,8 +146,12 @@ if (document.readyState === 'loading') {
   analyzePage();
 }
 
-// Watch for dynamic DOM additions
-const observer = new MutationObserver(() => analyzePage());
+// Watch for dynamic DOM additions with a debounce to prevent CPU spikes and lag
+let analysisTimeout = null;
+const observer = new MutationObserver(() => {
+  if (analysisTimeout) clearTimeout(analysisTimeout);
+  analysisTimeout = setTimeout(analyzePage, 800);
+});
 observer.observe(document.documentElement, { childList: true, subtree: true });
 
 console.log('[Security Extension] Content script active');

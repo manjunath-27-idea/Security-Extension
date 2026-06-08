@@ -1,4 +1,4 @@
-# Shield Sandbox Firewall v2.5.2
+# Shield Sandbox Firewall v2.5.3
 
 A professional, high-performance Chrome security extension designed to perform deep packet inspection, prevent PII/secret exfiltration, override behavioral fingerprinting vectors, and block trackers natively using browser-level filtering rules.
 
@@ -92,7 +92,13 @@ Shield Sandbox Firewall operates across four execution environments to balance d
 
 ## 📅 Version History & Release Logs
 
-### v2.5.2 (Current) — Defense-Aware Security Scoring
+### v2.5.3 (Current) — First-Party Social Site Whitelisting
+* **Context-Aware Tracker Filtering**: Enhanced tracker detection logic to check first-party vs. third-party contexts. Direct navigations (`main_frame`) and same-site requests are exempt from tracking rules, preventing secured social media sites from being blocked when visited directly.
+* **Declarative Rules Restriction**: Constrained Dynamic block rules compiled using Declarative Net Request (DNR) to apply only to `thirdParty` domains and exclude `main_frame` resource types.
+* **Whitelisted Domain Isolation**: Safeguarded trusted domains (e.g. Google, Facebook, Twitter/X, GitHub, Paypal, Stripe) from being registered as trackers or auto-added to the dynamic blocklist (`localBlockedDomains`).
+* **Session Startup Cleanup**: Implemented automatic filtering to remove whitelisted domains from stored blocklists on worker startup.
+
+### v2.5.2 — Defense-Aware Security Scoring
 * **Defense-Aware Mitigation Scale**: Transitioned the security scoring engine to respect active firewall blocks and browser shielding. Critical payload exfiltration leaks drop deductions from `-30` to `-5` when blocked, high-risk exfiltrations drop from `-10` to `-2`, and programmatically blocked trackers drop from `-8`/`-3` to `-1`/`-0.5`. Poisoned fingerprint attempts drop deductions from `-15` to `-2`. This keeps security grades representative of actual user protection.
 
 ### v2.5.1 — In-Page Toasts & Threat Log Deduplication
@@ -152,17 +158,17 @@ Shield Sandbox Firewall operates across four execution environments to balance d
 
 ```text
 Security-Extension/
-├── public/
-│   ├── background.js     # Persistent service worker (DNR, debugger, state)
-│   ├── content.js        # Content sync bridge & page toast overlays
-│   ├── injector.js       # Main-world Canvas, Audio, & WASM override hooks
-│   ├── dashboard.html    # Control Center dashboard UI
-│   ├── dashboard.js      # Dashboard render loops & user settings controls
-│   ├── popup.html        # Compact browser action popup
-│   ├── popup.js          # Popup metrics & state toggles
-│   ├── manifest.json     # MV3 permissions and script mappings
-│   └── images/           # Chrome branding assets
-└── README.md             # Project documentation (this file)
+├── background.js     # Persistent service worker (DNR, debugger, state)
+├── content.js        # Content sync bridge & page toast overlays
+├── injector.js       # Main-world Canvas, Audio, & WASM override hooks
+├── dashboard.html    # Control Center dashboard UI
+├── dashboard.js      # Dashboard render loops & user settings controls
+├── popup.html        # Compact browser action popup
+├── popup.js          # Popup metrics & state toggles
+├── manifest.json     # MV3 permissions and script mappings
+├── images/           # Chrome branding assets
+├── active_workspace_path.txt  # Saved active workspace path
+└── README.md         # Project documentation (this file)
 ```
 
 ---
@@ -172,5 +178,5 @@ Security-Extension/
 1. Clone or download the repository to your local machine.
 2. Open Chrome and navigate to `chrome://extensions/`.
 3. Enable **Developer mode** (top-right switch).
-4. Click **Load unpacked** (top-left button) and select the `public` directory.
+4. Click **Load unpacked** (top-left button) and select the root `Security-Extension` directory.
 5. Pin the extension to access the popup dashboard and monitor security events in real-time.
